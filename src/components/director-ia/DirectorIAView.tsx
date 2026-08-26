@@ -1,19 +1,19 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useMemo } from "react";
 import {
   Bot,
   Send,
   Sparkles,
-  ArrowRight,
-  TrendingUp,
   AlertTriangle,
   Lightbulb,
-  Building2
+  Building2,
+  FileText
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 import { formatCurrency } from "../../lib/utils/formatters";
 import { Button } from "../ui/Button";
-import { AIService } from "../../lib/ai/aiService";
-import { useToast } from "../ui/Toast";
+import { Drawer } from "../ui/Drawer";
+import { DirectorAIService } from "../../lib/intelligence/directorAIService";
+import { BusinessInsight } from "../../lib/intelligence/types";
 
 export const DirectorIAView: React.FC = () => {
   const {
@@ -24,33 +24,41 @@ export const DirectorIAView: React.FC = () => {
     quotes,
     customers,
     products,
-    currentOrg,
-    applyAIRecommendation
+    currentOrg
   } = useOrg();
 
-  const { showToast } = useToast();
-  const [messages, setMessages] = useState<Array<{ sender: "user" | "ia"; text: string; structuredData?: any }>>([
+  const [messages, setMessages] = useState<Array<{ sender: "user" | "ia"; text: string; structuredInsights?: BusinessInsight[] }>>([
     {
       sender: "ia",
-      text: "Hola Valentín. Analicé los datos de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy."
+      text: "Hola Valentín. Analicé las finanzas y operaciones de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy."
     }
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [evidenceInsight, setEvidenceInsight] = useState<BusinessInsight | null>(null);
 
-  const totalSales = sales.reduce((acc, s) => acc + (s.status !== "cancelled" ? s.total : 0), 0);
-  const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
-  const overdueTotal = receivables.filter(r => r.status === "overdue").reduce((acc, r) => acc + r.balance, 0);
-  const overdueCount = receivables.filter(r => r.status === "overdue").length;
-  const atRiskCount = customers.filter(c => c.status === "at_risk").length;
-  const activeQuotesTotal = quotes.filter(q => q.status === "sent").reduce((acc, q) => acc + q.total, 0);
+  // Consulta analítica estructurada
+  const analytics = useMemo(() => {
+    return DirectorAIService.getAnalytics({
+      organizationId: currentOrg?.id || "org-1",
+      customers,
+      products,
+      sales,
+      expenses,
+      receivables,
+      payables,
+      quotes
+    });
+  }, [currentOrg, customers, products, sales, expenses, receivables, payables, quotes]);
+
+  const { receivablesMetrics, customersMetrics, quotesMetrics, insights } = analytics;
 
   const quickQuestions = [
     "¿Cómo está mi negocio hoy?",
+    "¿Qué debería hacer hoy?",
     "¿Quién me debe dinero y cuánto?",
-    "¿Qué clientes están en riesgo de pérdida?",
-    "¿Qué gastos aumentaron este mes?",
-    "¿Qué debería hacer hoy?"
+    "¿Qué clientes están en riesgo?",
+    "¿Qué gastos aumentaron este mes?"
   ];
 
   const handleSend = async (queryText?: string) => {
@@ -62,16 +70,25 @@ export const DirectorIAView: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await AIService.askDirector({
+      const response = await DirectorAIService.answerExecutiveQuery({
         question: q,
-        orgData: { sales, expenses, receivables, payables, quotes, customers, products },
+        orgData: {
+          organizationId: currentOrg?.id || "org-1",
+          customers,
+          products,
+          sales,
+          expenses,
+          receivables,
+          payables,
+          quotes
+        },
         organizationName: currentOrg?.name || "Empresa"
       });
 
       setMessages(prev => [...prev, {
         sender: "ia",
         text: response.answer,
-        structuredData: response.structuredSummary
+        structuredInsights: response.structuredInsights
       }]);
     } catch (e) {
       setMessages(prev => [...prev, {
@@ -85,7 +102,7 @@ export const DirectorIAView: React.FC = () => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1100px", margin: "0 auto" }}>
-      {/* 1. Header del Director Administrativo IA */}
+      {/* 1. Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -95,33 +112,33 @@ export const DirectorIAView: React.FC = () => {
             </h1>
           </div>
           <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)", marginTop: "0.2rem" }}>
-            Diagnóstico ejecutivo, detección de riesgos financieros y recomendaciones accionables para <strong>{currentOrg?.name}</strong>.
+            Diagnóstico ejecutivo, detección de riesgos financieros y recomendaciones para <strong>{currentOrg?.name}</strong>.
           </p>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "var(--color-success-bg)", padding: "0.35rem 0.75rem", borderRadius: "var(--radius-full)", border: "1px solid var(--color-success-border)" }}>
           <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "var(--color-success)" }} />
           <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-success-text)" }}>
-            Análisis Determinístico Activo
+            Motor Determinístico Activo
           </span>
         </div>
       </div>
 
-      {/* 2. Tarjetas de Diagnóstico de Situación (Problemas / Riesgos / Oportunidades) */}
+      {/* 2. Tarjetas de Diagnóstico de Situación */}
       <div className="grid grid-cols-3 md-grid-cols-1" style={{ gap: "1rem" }}>
         {/* Problemas / Mora */}
         <div className="card" style={{ borderLeft: "4px solid var(--color-danger)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
             <AlertTriangle size={16} style={{ color: "var(--color-danger-text)" }} />
             <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-danger-text)" }}>
-              {overdueCount} PROBLEMAS DETECTADOS
+              {receivablesMetrics.overdueCount} PROBLEMAS DETECTADOS
             </span>
           </div>
           <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-text-primary)" }} className="tabular-nums">
-            {formatCurrency(overdueTotal)}
+            {formatCurrency(receivablesMetrics.totalOverdue)}
           </div>
           <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
-            En mora activa. 2 clientes concentran el 72% del atraso.
+            En mora activa. Promedio de atraso: {receivablesMetrics.averageOverdueDays} días.
           </p>
         </div>
 
@@ -130,14 +147,14 @@ export const DirectorIAView: React.FC = () => {
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
             <Building2 size={16} style={{ color: "var(--color-warning-text)" }} />
             <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-warning-text)" }}>
-              {atRiskCount} CLIENTES EN RIESGO
+              {customersMetrics.atRiskCount} CLIENTES EN RIESGO
             </span>
           </div>
           <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-text-primary)" }}>
             Inactividad prolongada
           </div>
           <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
-            Superaron el promedio habitual de recompra por más de 15 días.
+            Superaron su intervalo habitual de recompra.
           </p>
         </div>
 
@@ -150,18 +167,18 @@ export const DirectorIAView: React.FC = () => {
             </span>
           </div>
           <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-success-text)" }} className="tabular-nums">
-            {formatCurrency(activeQuotesTotal)}
+            {formatCurrency(quotesMetrics.activeQuotesTotal)}
           </div>
           <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
-            En {quotes.filter(q => q.status === "sent").length} presupuestos enviados próximos a cerrar.
+            En {quotesMetrics.totalQuotes} presupuestos enviados.
           </p>
         </div>
       </div>
 
-      {/* 3. Panel de Preguntas Sugeridas */}
+      {/* 3. Preguntas Rápidas */}
       <div>
         <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
-          Preguntas Rápidas al Director IA:
+          Preguntas Ejecutivas al Director IA:
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
           {quickQuestions.map(q => (
@@ -191,7 +208,7 @@ export const DirectorIAView: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Flujo de Respuestas Estructuradas */}
+      {/* 4. Chat y Respuestas Estructuradas con Evidencia */}
       <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem", minHeight: "350px", backgroundColor: "#ffffff" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", flex: 1, overflowY: "auto" }}>
           {messages.map((m, idx) => (
@@ -217,7 +234,7 @@ export const DirectorIAView: React.FC = () => {
 
               <div
                 style={{
-                  maxWidth: "85%",
+                  maxWidth: "88%",
                   padding: "0.85rem 1.1rem",
                   borderRadius: "var(--radius-lg)",
                   backgroundColor: m.sender === "user" ? "var(--color-primary)" : "var(--color-bg-base)",
@@ -230,14 +247,22 @@ export const DirectorIAView: React.FC = () => {
               >
                 {m.text}
 
-                {m.structuredData && (
-                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--color-border-default)", display: "flex", gap: "1rem" }}>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                      <strong>Ventas:</strong> {formatCurrency(m.structuredData.totalSales || totalSales)}
+                {m.structuredInsights && m.structuredInsights.length > 0 && (
+                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--color-border-default)", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)" }}>
+                      Insights Determinísticos Respaldados:
                     </div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                      <strong>Gastos:</strong> {formatCurrency(m.structuredData.totalExpenses || totalExpenses)}
-                    </div>
+                    {m.structuredInsights.map((ins, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", fontSize: "0.75rem" }}>
+                        <span style={{ fontWeight: 600 }}>{ins.title}</span>
+                        <button
+                          onClick={() => setEvidenceInsight(ins)}
+                          style={{ background: "none", border: "none", color: "var(--color-accent)", fontSize: "0.6875rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.2rem" }}
+                        >
+                          <FileText size={11} /> Ver datos
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -247,16 +272,16 @@ export const DirectorIAView: React.FC = () => {
           {isLoading && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-muted)", fontSize: "0.8125rem", padding: "0.5rem" }}>
               <div className="skeleton" style={{ width: "16px", height: "16px", borderRadius: "50%" }} />
-              Analizando balance comercial de {currentOrg?.name}...
+              Consultando motor analítico de {currentOrg?.name}...
             </div>
           )}
         </div>
 
-        {/* Input & Envío */}
+        {/* Input */}
         <div style={{ display: "flex", gap: "0.5rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.75rem" }}>
           <input
             type="text"
-            placeholder="Escribí una consulta sobre tus ventas, cobros o gastos..."
+            placeholder="Preguntale al Director IA sobre tus números, deudas o rentabilidad..."
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleSend()}
@@ -279,6 +304,62 @@ export const DirectorIAView: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Drawer de Evidencia de Director IA */}
+      {evidenceInsight && (
+        <Drawer
+          isOpen={true}
+          onClose={() => setEvidenceInsight(null)}
+          title={"Evidencia: " + evidenceInsight.title}
+          subtitle="Datos reales que respaldan este insight"
+          footer={
+            <Button variant="primary" size="sm" onClick={() => setEvidenceInsight(null)}>
+              Cerrar
+            </Button>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div className="card" style={{ backgroundColor: "var(--color-bg-base)" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase" }}>
+                DESCRIPCIÓN TÉCNICA
+              </div>
+              <p style={{ fontSize: "0.875rem", marginTop: "0.4rem", color: "var(--color-text-primary)", lineHeight: 1.5 }}>
+                {evidenceInsight.description}
+              </p>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+                Datos y Métricas Observadas:
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {evidenceInsight.evidence.map((ev, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "0.6rem 0.75rem",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--color-border-default)",
+                      backgroundColor: "#ffffff",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>{ev.label}</div>
+                      <div style={{ fontSize: "0.6875rem", color: "var(--color-text-muted)" }}>Origen: {ev.source}</div>
+                    </div>
+                    <div style={{ fontSize: "0.875rem", fontWeight: 800 }} className="tabular-nums">
+                      {ev.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Drawer>
+      )}
     </div>
   );
 };

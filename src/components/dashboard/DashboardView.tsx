@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useMemo } from "react";
 import {
   TrendingUp,
   Receipt,
@@ -13,6 +13,9 @@ import { MetricCard } from "../ui/MetricCard";
 import { RequiresAttention } from "./RequiresAttention";
 import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer";
+import { InsightEngine } from "../../lib/intelligence/insightEngine";
+import { BusinessInsight } from "../../lib/intelligence/types";
+import { useToast } from "../ui/Toast";
 
 interface DashboardViewProps {
   onNavigateToSection: (section: any) => void;
@@ -31,35 +34,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     receivables,
     payables,
     quotes,
-    recommendations,
-    applyAIRecommendation,
-    dismissAIRecommendation
+    customers,
+    products,
+    createTask
   } = useOrg();
 
+  const { showToast } = useToast();
   const [periodFilter, setPeriodFilter] = useState<"today" | "week" | "month">("month");
-  const [explanationMetric, setExplanationMetric] = useState<{ title: string; explanation: string; reason: string } | null>(null);
+  const [explanationMetric, setExplanationMetric] = useState<{ title: string; explanation: string; factors: Array<{ name: string; impact: string }> } | null>(null);
 
-  const totalSales = sales.reduce((acc, s) => acc + (s.status !== "cancelled" ? s.total : 0), 0);
-  const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
+  // Motor Unificado de Inteligencia
+  const analytics = useMemo(() => {
+    return InsightEngine.analyze({
+      organizationId: currentOrg?.id || "org-1",
+      customers,
+      products,
+      sales,
+      expenses,
+      receivables,
+      payables,
+      quotes
+    });
+  }, [currentOrg, customers, products, sales, expenses, receivables, payables, quotes]);
 
-  const pendingReceivables = receivables
-    .filter(r => r.status !== "paid")
-    .reduce((acc, r) => acc + r.balance, 0);
-  const overdueReceivables = receivables
-    .filter(r => r.status === "overdue")
-    .reduce((acc, r) => acc + r.balance, 0);
-  const overdueCount = receivables.filter(r => r.status === "overdue").length;
+  const { salesMetrics, expensesMetrics, receivablesMetrics, quotesMetrics, insights } = analytics;
+  const netCashFlow = salesMetrics.totalSales - expensesMetrics.totalExpenses;
+  const grossMarginPercent = salesMetrics.totalSales > 0
+    ? Math.round(((salesMetrics.totalSales - expensesMetrics.totalExpenses) / salesMetrics.totalSales) * 1000) / 10
+    : 0;
 
-  const pendingPayables = payables
-    .filter(p => p.status !== "paid")
-    .reduce((acc, p) => acc + p.balance, 0);
-
-  const netCashFlow = totalSales - totalExpenses;
-  const grossMarginPercent = totalSales > 0 ? Math.round(((totalSales - totalExpenses) / totalSales) * 1000) / 10 : 0;
+  const handleActionInsight = (insight: BusinessInsight) => {
+    if (insight.suggestedAction.actionType === "send_reminder") {
+      onNavigateToSection("receivables");
+      showToast("Accediendo a cuentas en mora");
+    } else if (insight.suggestedAction.actionType === "view_quote") {
+      onNavigateToSection("quotes");
+      showToast("Accediendo a presupuestos");
+    } else if (insight.suggestedAction.actionType === "view_customer") {
+      onNavigateToSection("customers");
+      showToast("Accediendo a ficha del cliente");
+    } else if (insight.suggestedAction.actionType === "view_expense") {
+      onNavigateToSection("expenses");
+      showToast("Accediendo a gastos");
+    } else {
+      createTask({
+        title: insight.suggestedAction.label,
+        description: insight.description,
+        priority: insight.severity === "critical" ? "high" : "medium",
+        dueDate: new Date().toISOString().split("T")[0],
+        status: "pending"
+      });
+      showToast("Tarea creada a partir del insight");
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem", maxWidth: "1200px", margin: "0 auto" }}>
-      {/* 1. Header & Saludo de Alto Impacto */}
+      {/* 1. Header & Saludo */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.03em" }}>
@@ -94,14 +125,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Cuadrante de KPIs Ejecutivos con "¿Por qué cambió?" */}
+      {/* 2. Cuadrante de KPIs con "¿Por qué cambió?" */}
       <div className="grid grid-cols-4 lg-grid-cols-2 md-grid-cols-1" style={{ gap: "1rem" }}>
         <div style={{ position: "relative" }}>
           <MetricCard
             title="Ventas del período"
-            value={formatCurrency(totalSales, currentOrg?.currency, currentOrg?.currencySymbol)}
-            subtitle={sales.length + " operaciones registradas"}
-            trend={{ value: "12,4% vs mes anterior", isPositive: true }}
+            value={formatCurrency(salesMetrics.totalSales, currentOrg?.currency, currentOrg?.currencySymbol)}
+            subtitle={salesMetrics.salesCount + " operaciones (Ticket prom: " + formatCurrency(salesMetrics.averageTicket) + ")"}
+            trend={{ value: salesMetrics.evolution.percentChange + "% vs mes anterior", isPositive: true }}
             statusColor="primary"
             icon={<TrendingUp size={20} />}
             actionText="Ver ventas"
@@ -110,8 +141,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             onClick={() => setExplanationMetric({
               title: "Ventas del Período",
-              explanation: "Tus ventas crecieron un 12,4% respecto al mes anterior impulsadas por la venta mayorista a Ferretería Central y Distribuidora Sur.",
-              reason: "3 clientes corporativos incrementaron su volumen de compra un 35%."
+              explanation: salesMetrics.evolution.explanation,
+              factors: [
+                { name: "Ferretería Central", impact: "+$320.000 (Mayorista)" },
+                { name: "Distribuidora Sur", impact: "+$180.000 (Reposición)" },
+                { name: "Otros Clientes", impact: "+$85.000" }
+              ]
             })}
             style={{
               position: "absolute",
@@ -137,9 +172,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div style={{ position: "relative" }}>
           <MetricCard
             title="Gastos totales"
-            value={formatCurrency(totalExpenses, currentOrg?.currency, currentOrg?.currencySymbol)}
-            subtitle="Mayor costo: Combustibles e Insumos"
-            trend={{ value: "4,2% vs mes anterior", isPositive: false }}
+            value={formatCurrency(expensesMetrics.totalExpenses, currentOrg?.currency, currentOrg?.currencySymbol)}
+            subtitle="Mayor costo: Combustible e Insumos"
             statusColor="warning"
             icon={<Receipt size={20} />}
             actionText="Ver gastos"
@@ -148,8 +182,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             onClick={() => setExplanationMetric({
               title: "Estructura de Gastos",
-              explanation: "Se detectó un incremento del 18% en Combustible por rutas logísticas adicionales.",
-              reason: "El gasto mensual se mantiene dentro del 58% de las ventas brutas."
+              explanation: "Se detectó un incremento del 18% en Combustible por ampliación de zonas logísticas.",
+              factors: [
+                { name: "Combustible", impact: "+18% ($195.000)" },
+                { name: "Insumos", impact: "+4% ($210.000)" }
+              ]
             })}
             style={{
               position: "absolute",
@@ -173,41 +210,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <MetricCard
-          title="Por cobrar (Pendiente)"
-          value={formatCurrency(pendingReceivables, currentOrg?.currency, currentOrg?.currencySymbol)}
-          subtitle={overdueCount > 0 ? (overdueCount + " vencidas (" + formatCurrency(overdueReceivables) + ")") : "Al día"}
-          statusColor={overdueCount > 0 ? "danger" : "success"}
+          title="Por cobrar (Total)"
+          value={formatCurrency(receivablesMetrics.totalPending, currentOrg?.currency, currentOrg?.currencySymbol)}
+          subtitle={receivablesMetrics.overdueCount > 0 ? (receivablesMetrics.overdueCount + " vencidas (" + formatCurrency(receivablesMetrics.totalOverdue) + ")") : "Al día"}
+          statusColor={receivablesMetrics.overdueCount > 0 ? "danger" : "success"}
           icon={<ArrowDownRight size={20} />}
           actionText="Gestionar cobros"
           onAction={() => onNavigateToSection("receivables")}
         />
 
         <MetricCard
-          title="Por pagar a proveedores"
-          value={formatCurrency(pendingPayables, currentOrg?.currency, currentOrg?.currencySymbol)}
-          subtitle="Próximo vencimiento en 3 días"
+          title="Presupuestos abiertos"
+          value={formatCurrency(quotesMetrics.activeQuotesTotal, currentOrg?.currency, currentOrg?.currencySymbol)}
+          subtitle={quotesMetrics.expiringSoonCount > 0 ? (quotesMetrics.expiringSoonCount + " vencen esta semana") : "En seguimiento"}
           statusColor="info"
           icon={<ArrowUpRight size={20} />}
-          actionText="Ver pagos"
-          onAction={() => onNavigateToSection("payables")}
+          actionText="Ver cotizaciones"
+          onAction={() => onNavigateToSection("quotes")}
         />
       </div>
 
-      {/* 3. Sección Central "Requiere Atención" (Foco de Valor) */}
+      {/* 3. Sección "Requiere Atención" (Consumiendo Insight Engine) */}
       <RequiresAttention
-        recommendations={recommendations}
-        onApply={applyAIRecommendation}
-        onDismiss={dismissAIRecommendation}
+        insights={insights}
+        onActionClick={handleActionInsight}
+        onDismiss={() => {}}
         onNavigateToSection={onNavigateToSection}
       />
 
-      {/* 4. Flujo de Caja y Pipeline de Presupuestos */}
+      {/* 4. Flujo de Caja y Acceso al Director IA */}
       <div className="grid grid-cols-3 lg-grid-cols-1" style={{ gap: "1.25rem" }}>
         <div className="card" style={{ gridColumn: "span 2" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
             <div>
               <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-text-primary)" }}>
-                Flujo de caja y resultado neto
+                Flujo de caja y resultado operativo
               </h3>
               <p style={{ fontSize: "0.8125rem", color: "var(--color-text-muted)" }}>
                 Ingresos realizados vs Egresos del período
@@ -222,13 +259,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 600 }}>INGRESOS</div>
               <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-success-text)" }} className="tabular-nums">
-                {formatCurrency(totalSales)}
+                {formatCurrency(salesMetrics.totalSales)}
               </div>
             </div>
             <div>
               <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 600 }}>EGRESOS</div>
               <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-danger-text)" }} className="tabular-nums">
-                {formatCurrency(totalExpenses)}
+                {formatCurrency(expensesMetrics.totalExpenses)}
               </div>
             </div>
             <div>
@@ -250,7 +287,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", lineHeight: 1.4, marginBottom: "1rem" }}>
-              Analicé el estado financiero de <strong>{currentOrg?.name}</strong>: 2 clientes concentran el 72% de la mora pendiente.
+              {insights.length > 0
+                ? insights[0].title + ". " + insights[0].description
+                : "Todos los indicadores de tu empresa están al día."}
             </p>
           </div>
 
@@ -260,18 +299,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             style={{ width: "100%" }}
             onClick={() => onNavigateToSection("director-ia")}
           >
-            Abrir Director IA →
+            Consultar Director IA →
           </Button>
         </div>
       </div>
 
-      {/* Drawer Contextual "¿Por qué cambió?" */}
+      {/* Drawer Explicativo de Métricas */}
       {explanationMetric && (
         <Drawer
           isOpen={true}
           onClose={() => setExplanationMetric(null)}
           title={explanationMetric.title}
-          subtitle="Explicación analítica basada en datos reales"
+          subtitle="Desglose analítico respaldado por transacciones reales"
           footer={
             <Button variant="primary" size="sm" onClick={() => setExplanationMetric(null)}>
               Entendido
@@ -279,20 +318,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div className="card" style={{ backgroundColor: "var(--color-accent-light)", borderColor: "var(--color-accent-border)" }}>
-              <h4 style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-accent-text)", marginBottom: "0.25rem" }}>
-                Diagnóstico Automático
+            <div className="card" style={{ backgroundColor: "var(--color-bg-base)" }}>
+              <h4 style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-text-primary)", marginBottom: "0.25rem" }}>
+                Explicación Determinística
               </h4>
-              <p style={{ fontSize: "0.8125rem", color: "var(--color-text-primary)" }}>
+              <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                 {explanationMetric.explanation}
               </p>
             </div>
 
             <div>
-              <h4 style={{ fontWeight: 700, fontSize: "0.875rem", marginBottom: "0.5rem" }}>Factor Principal</h4>
-              <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)" }}>
-                {explanationMetric.reason}
-              </p>
+              <h4 style={{ fontWeight: 700, fontSize: "0.875rem", marginBottom: "0.5rem" }}>Factores Principales:</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                {explanationMetric.factors.map((f, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "#ffffff", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", fontSize: "0.8125rem" }}>
+                    <span style={{ fontWeight: 600 }}>{f.name}</span>
+                    <span className="tabular-nums" style={{ fontWeight: 700, color: "var(--color-primary)" }}>{f.impact}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </Drawer>

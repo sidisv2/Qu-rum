@@ -1,17 +1,19 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useMemo } from "react";
 import {
   CalendarCheck,
   CheckCircle2,
-  ArrowRight,
   Plus,
-  ArrowDownRight,
-  FileSpreadsheet
+  ArrowRight,
+  FileText
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 import { formatCurrency } from "../../lib/utils/formatters";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
+import { Drawer } from "../ui/Drawer";
 import { useToast } from "../ui/Toast";
+import { InsightEngine } from "../../lib/intelligence/insightEngine";
+import { BusinessInsight } from "../../lib/intelligence/types";
 
 interface MyDayViewProps {
   onNavigateToSection: (section: any) => void;
@@ -22,10 +24,12 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
     tasks,
     receivables,
     quotes,
-    recommendations,
+    sales,
+    expenses,
+    customers,
+    products,
     toggleTaskStatus,
     createTask,
-    applyAIRecommendation,
     currentOrg
   } = useOrg();
 
@@ -33,11 +37,24 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskPriority, setTaskPriority] = useState<"high" | "medium" | "low">("medium");
+  const [evidenceInsight, setEvidenceInsight] = useState<BusinessInsight | null>(null);
 
-  const overdueReceivables = receivables.filter(r => r.status === "overdue");
+  // Consumir el Motor Único de Insights
+  const analytics = useMemo(() => {
+    return InsightEngine.analyze({
+      organizationId: currentOrg?.id || "org-1",
+      customers,
+      products,
+      sales,
+      expenses,
+      receivables,
+      payables: [],
+      quotes
+    });
+  }, [currentOrg, customers, products, sales, expenses, receivables, quotes]);
+
+  const { insights } = analytics;
   const pendingTasks = tasks.filter(t => t.status === "pending");
-  const expiringQuotes = quotes.filter(q => q.status === "sent");
-  const pendingRecommendations = recommendations.filter(r => r.status === "pending");
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +76,26 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
     showToast("Estado de tarea actualizado");
   };
 
-  const totalActionsCount = overdueReceivables.length + pendingTasks.length + pendingRecommendations.length;
+  const handleTakeAction = (ins: BusinessInsight) => {
+    if (ins.suggestedAction.actionType === "send_reminder") {
+      onNavigateToSection("receivables");
+    } else if (ins.suggestedAction.actionType === "view_quote") {
+      onNavigateToSection("quotes");
+    } else if (ins.suggestedAction.actionType === "view_customer") {
+      onNavigateToSection("customers");
+    } else if (ins.suggestedAction.actionType === "view_expense") {
+      onNavigateToSection("expenses");
+    } else {
+      createTask({
+        title: ins.suggestedAction.label,
+        description: ins.description,
+        priority: ins.severity === "critical" ? "high" : "medium",
+        dueDate: new Date().toISOString().split("T")[0],
+        status: "pending"
+      });
+      showToast("Acción convertida en tarea del día");
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "960px", margin: "0 auto" }}>
@@ -72,7 +108,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
             </h1>
           </div>
           <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)", marginTop: "0.2rem" }}>
-            Plan de acción priorizado para hoy en <strong>{currentOrg?.name}</strong>. {totalActionsCount} acciones pendientes.
+            Prioridades determinísticas para hoy en <strong>{currentOrg?.name}</strong>. ({insights.length} focos de atención detectados).
           </p>
         </div>
 
@@ -86,56 +122,57 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-        {overdueReceivables.length > 0 && (
-          <div className="card" style={{ borderLeft: "4px solid var(--color-danger)" }}>
+        {/* 1. Prioridades Detectadas por el Motor de Inteligencia */}
+        {insights.length > 0 && (
+          <div className="card" style={{ borderLeft: "4px solid var(--color-primary)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span className="badge badge-danger">Prioridad Alta</span>
-                <h3 style={{ fontSize: "0.9375rem", fontWeight: 700 }}>Cobranzas Vencidas ({overdueReceivables.length})</h3>
+                <span className="badge badge-neutral" style={{ fontWeight: 700 }}>Focos del Día ({insights.length})</span>
+                <h3 style={{ fontSize: "0.9375rem", fontWeight: 700 }}>Atención y Mitigación Inmediata</h3>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onNavigateToSection("receivables")}
-                icon={<ArrowRight size={14} />}
-              >
-                Ir a Cobros
-              </Button>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {overdueReceivables.map(rec => (
+              {insights.map(ins => (
                 <div
-                  key={rec.id}
+                  key={ins.id}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    padding: "0.6rem 0.75rem",
+                    padding: "0.75rem",
                     backgroundColor: "var(--color-bg-base)",
                     borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--color-border-subtle)"
+                    border: "1px solid var(--color-border-subtle)",
+                    flexWrap: "wrap",
+                    gap: "0.5rem"
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <ArrowDownRight size={16} style={{ color: "var(--color-danger-text)" }} />
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>{rec.customerName}</span>
-                      <span style={{ fontSize: "0.75rem", color: "var(--color-danger-text)", marginLeft: "0.5rem" }}>
-                        Venció hace {rec.overdueDays} días
+                  <div style={{ flex: 1, minWidth: "260px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span className={"badge " + (ins.severity === "critical" ? "badge-danger" : ins.severity === "high" ? "badge-warning" : "badge-info")}>
+                        {ins.severity.toUpperCase()}
                       </span>
+                      <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>{ins.title}</span>
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)", marginTop: "0.2rem" }}>
+                      {ins.description}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.9375rem", color: "var(--color-danger-text)" }} className="tabular-nums">
-                      {formatCurrency(rec.balance)}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onNavigateToSection("receivables")}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <button
+                      onClick={() => setEvidenceInsight(ins)}
+                      style={{ background: "none", border: "none", color: "var(--color-accent)", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.2rem" }}
                     >
-                      Cobrar
+                      <FileText size={12} /> Ver datos
+                    </button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleTakeAction(ins)}
+                    >
+                      {ins.suggestedAction.label}
                     </Button>
                   </div>
                 </div>
@@ -144,49 +181,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
           </div>
         )}
 
-        {pendingRecommendations.length > 0 && (
-          <div className="card" style={{ borderLeft: "4px solid var(--color-accent)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span className="badge badge-info">Sugerido por Director IA</span>
-                <h3 style={{ fontSize: "0.9375rem", fontWeight: 700 }}>Oportunidades y Mitigación ({pendingRecommendations.length})</h3>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {pendingRecommendations.map(rec => (
-                <div
-                  key={rec.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "0.6rem 0.75rem",
-                    backgroundColor: "var(--color-bg-base)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--color-border-subtle)"
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-text-primary)" }}>{rec.title}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>{rec.recommendation}</div>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      applyAIRecommendation(rec.id);
-                      showToast("Acción convertida en tarea del día");
-                    }}
-                  >
-                    Tomar Acción
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
+        {/* 2. Tareas Pendientes del Día */}
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h3 style={{ fontSize: "0.9375rem", fontWeight: 700 }}>Tareas Pendientes ({pendingTasks.length})</h3>
@@ -213,8 +208,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
                     backgroundColor: "var(--color-bg-base)",
                     borderRadius: "var(--radius-md)",
                     border: "1px solid var(--color-border-subtle)",
-                    cursor: "pointer",
-                    transition: "all 0.12s ease"
+                    cursor: "pointer"
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -229,12 +223,7 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
                         justifyContent: "center"
                       }}
                     />
-                    <div>
-                      <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>{task.title}</span>
-                      {task.suggestedByAi && (
-                        <span className="badge badge-info" style={{ marginLeft: "0.5rem", fontSize: "0.6875rem" }}>IA</span>
-                      )}
-                    </div>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>{task.title}</span>
                   </div>
                   <span className={"badge " + (task.priority === "high" ? "badge-danger" : "badge-neutral")}>
                     {task.priority === "high" ? "Alta" : "Normal"}
@@ -244,63 +233,65 @@ export const MyDayView: React.FC<MyDayViewProps> = ({ onNavigateToSection }) => 
             </div>
           )}
         </div>
-
-        {expiringQuotes.length > 0 && (
-          <div className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <FileSpreadsheet size={16} style={{ color: "var(--color-warning)" }} />
-                <h3 style={{ fontSize: "0.9375rem", fontWeight: 700 }}>Presupuestos Abiertos a Cerrar ({expiringQuotes.length})</h3>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onNavigateToSection("quotes")}
-                icon={<ArrowRight size={14} />}
-              >
-                Ver todos
-              </Button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-              {expiringQuotes.slice(0, 3).map(quote => (
-                <div
-                  key={quote.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "0.5rem 0.75rem",
-                    backgroundColor: "var(--color-bg-base)",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--color-border-subtle)"
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: "0.8125rem" }}>{quote.customerName}</span>
-                    <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginLeft: "0.5rem" }}>
-                      ({quote.quoteNumber})
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <span style={{ fontWeight: 700, fontSize: "0.875rem" }} className="tabular-nums">
-                      {formatCurrency(quote.total)}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onNavigateToSection("quotes")}
-                    >
-                      Seguimiento
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
+      {/* Drawer de Evidencia */}
+      {evidenceInsight && (
+        <Drawer
+          isOpen={true}
+          onClose={() => setEvidenceInsight(null)}
+          title={"Evidencia: " + evidenceInsight.title}
+          subtitle="Datos reales que respaldan este insight"
+          footer={
+            <Button variant="primary" size="sm" onClick={() => setEvidenceInsight(null)}>
+              Cerrar
+            </Button>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div className="card" style={{ backgroundColor: "var(--color-bg-base)" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase" }}>
+                DESCRIPCIÓN TÉCNICA
+              </div>
+              <p style={{ fontSize: "0.875rem", marginTop: "0.4rem", color: "var(--color-text-primary)", lineHeight: 1.5 }}>
+                {evidenceInsight.description}
+              </p>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+                Datos y Métricas Observadas:
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {evidenceInsight.evidence.map((ev, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "0.6rem 0.75rem",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--color-border-default)",
+                      backgroundColor: "#ffffff",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>{ev.label}</div>
+                      <div style={{ fontSize: "0.6875rem", color: "var(--color-text-muted)" }}>Origen: {ev.source}</div>
+                    </div>
+                    <div style={{ fontSize: "0.875rem", fontWeight: 800 }} className="tabular-nums">
+                      {ev.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Drawer>
+      )}
+
+      {/* Modal Nueva Tarea */}
       {isNewTaskOpen && (
         <Modal
           isOpen={true}
