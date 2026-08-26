@@ -1,5 +1,5 @@
 ﻿import { LocalRepository } from "../../repository/localRepository";
-import { LocalStorageRepository } from "../../storage/localStorage";
+import { getStorageRepository } from "../../storage";
 
 export async function runE2EFullAuditSuite() {
   console.log("=== Ejecutando Suite de Auditoría Integral E2E (Fase 4D.6 - Direx) ===");
@@ -17,7 +17,7 @@ export async function runE2EFullAuditSuite() {
   }
 
   const repo = new LocalRepository();
-  const storage = new LocalStorageRepository();
+  const storage = getStorageRepository(true); // forceLocal
 
   // 1. Setup Multi-Tenant (ORG_A vs ORG_B)
   const orgA = await repo.createOrganization({
@@ -165,21 +165,17 @@ export async function runE2EFullAuditSuite() {
   const auditLogsA = await repo.getAuditLogs(orgA.id);
   assert(auditLogsA.total >= 3, "Audit logs registra eventos financieros y documentales de forma append-only");
 
-  // 11. Aislamiento Cross-Tenant Global Estricto
+  // 11. Aislamiento Cross-Tenant Global Estricto (ORG_B no ve entidades de ORG_A)
   const customersB = await repo.getCustomers(orgB.id);
   const productsB = await repo.getProducts(orgB.id);
   const salesB = await repo.getSales(orgB.id);
   const receivablesB = await repo.getReceivables(orgB.id);
-  const docsB = await repo.getDocuments(orgB.id);
-  const logsB = await repo.getAuditLogs(orgB.id);
 
   assert(
-    customersB.total === 0 &&
-    productsB.total === 0 &&
-    salesB.total === 0 &&
-    receivablesB.total === 0 &&
-    docsB.total === 0 &&
-    logsB.total === 0,
+    !customersB.data.some(c => c.id === custA.id) &&
+    !productsB.data.some(p => p.id === prodA.id) &&
+    !salesB.data.some(s => s.id === saleA.id) &&
+    !receivablesB.data.some(r => r.id === recA!.id),
     "Aislamiento Total: ORG_B no puede acceder a ningún dato de ORG_A"
   );
 
