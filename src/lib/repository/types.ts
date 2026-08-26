@@ -86,29 +86,36 @@ export interface IDataRepository {
   createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote>;
   updateQuoteStatus(orgId: string, id: string, status: Quote["status"]): Promise<Quote>;
 
-  // Receivables & Payments (Subfase 4D.4)
+  // Receivables & Payments
   getReceivables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Receivable>>;
   getReceivableById(orgId: string, id: string): Promise<Receivable | null>;
   getReceivablePayments(orgId: string, receivableId: string): Promise<PaymentRecord[]>;
   recordPaymentReceivable(orgId: string, receivableId: string, payment: PaymentParams): Promise<Receivable>;
 
-  // Payables & Payments (Subfase 4D.4)
+  // Payables & Payments
   getPayables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Payable>>;
   getPayableById(orgId: string, id: string): Promise<Payable | null>;
   getPayablePayments(orgId: string, payableId: string): Promise<PaymentRecord[]>;
   recordPaymentPayable(orgId: string, payableId: string, payment: PaymentParams): Promise<Payable>;
 
-  // Tasks
-  getTasks(orgId: string): Promise<Task[]>;
+  // Tasks (Subfase 4D.5)
+  getTasks(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Task>>;
+  getTaskById(orgId: string, id: string): Promise<Task | null>;
   createTask(orgId: string, task: Omit<Task, "id" | "organizationId" | "createdAt">): Promise<Task>;
+  updateTask(orgId: string, id: string, data: Partial<Task>): Promise<Task>;
   toggleTaskStatus(orgId: string, id: string): Promise<Task>;
   deleteTask(orgId: string, id: string): Promise<boolean>;
 
-  // Documents & Audit
-  getDocuments(orgId: string): Promise<DocumentRecord[]>;
-  uploadDocument(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord>;
+  // Documents & Storage Metadata (Subfase 4D.5)
+  getDocuments(orgId: string, params?: PaginationParams): Promise<PaginatedResult<DocumentRecord>>;
+  getDocumentById(orgId: string, id: string): Promise<DocumentRecord | null>;
+  createDocumentMetadata(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord>;
   deleteDocument(orgId: string, id: string): Promise<boolean>;
-  getAuditLogs(orgId: string): Promise<AuditLog[]>;
+
+  // Audit Logs (Subfase 4D.5 - Append Only)
+  getAuditLogs(orgId: string, params?: PaginationParams): Promise<PaginatedResult<AuditLog>>;
   addAuditLog(orgId: string, log: Omit<AuditLog, "id" | "organizationId" | "timestamp">): Promise<AuditLog>;
+
+  // Notifications
   getNotifications(orgId: string): Promise<NotificationItem[]>;
 }

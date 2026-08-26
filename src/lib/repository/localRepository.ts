@@ -530,8 +530,27 @@ export class LocalRepository implements IDataRepository {
   }
 
   // --- TASKS ---
-  async getTasks(orgId: string): Promise<Task[]> {
-    return this.getState(orgId).tasks.filter(t => t.organizationId === orgId);
+  async getTasks(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Task>> {
+    let items = this.getState(orgId).tasks.filter(t => t.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(t => t.title.toLowerCase().includes(q) || (t.description && t.description.toLowerCase().includes(q)));
+    }
+    if (params?.status) {
+      items = items.filter(t => t.status === params.status);
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    return {
+      data: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+      page,
+      pageSize
+    };
+  }
+
+  async getTaskById(orgId: string, id: string): Promise<Task | null> {
+    return this.getState(orgId).tasks.find(t => t.id === id && t.organizationId === orgId) || null;
   }
 
   async createTask(orgId: string, task: Omit<Task, "id" | "organizationId" | "createdAt">): Promise<Task> {
@@ -544,8 +563,45 @@ export class LocalRepository implements IDataRepository {
       createdAt: new Date().toISOString()
     };
     st.tasks = [newTask, ...st.tasks];
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "CREAR_TAREA",
+      entityType: "task",
+      entityId: newTask.id,
+      details: "Tarea creada: " + newTask.title,
+      timestamp: new Date().toISOString()
+    });
     this.saveState(st);
     return newTask;
+  }
+
+  async updateTask(orgId: string, id: string, data: Partial<Task>): Promise<Task> {
+    const st = this.getState(orgId);
+    let updated: Task | null = null;
+    st.tasks = st.tasks.map(t => {
+      if (t.id === id && t.organizationId === orgId) {
+        updated = { ...t, ...data };
+        return updated;
+      }
+      return t;
+    });
+    if (!updated) throw new Error("Task not found");
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "ACTUALIZAR_TAREA",
+      entityType: "task",
+      entityId: id,
+      details: "Tarea actualizada",
+      timestamp: new Date().toISOString()
+    });
+    this.saveState(st);
+    return updated;
   }
 
   async toggleTaskStatus(orgId: string, id: string): Promise<Task> {
@@ -553,28 +609,56 @@ export class LocalRepository implements IDataRepository {
     let updated: Task | null = null;
     st.tasks = st.tasks.map(t => {
       if (t.id === id && t.organizationId === orgId) {
-        updated = { ...t, status: t.status === "completed" ? "pending" : "completed" };
+        const nextStatus: Task["status"] = t.status === "completed" ? "pending" : "completed";
+        updated = { ...t, status: nextStatus };
         return updated;
       }
       return t;
     });
-    this.saveState(st);
     if (!updated) throw new Error("Task not found");
+    this.saveState(st);
     return updated;
   }
 
   async deleteTask(orgId: string, id: string): Promise<boolean> {
     const st = this.getState(orgId);
     st.tasks = st.tasks.filter(t => !(t.id === id && t.organizationId === orgId));
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "ELIMINAR_TAREA",
+      entityType: "task",
+      entityId: id,
+      details: "Tarea eliminada",
+      timestamp: new Date().toISOString()
+    });
     this.saveState(st);
     return true;
   }
 
-  async getDocuments(orgId: string): Promise<DocumentRecord[]> {
-    return this.getState(orgId).documents.filter(d => d.organizationId === orgId);
+  async getDocuments(orgId: string, params?: PaginationParams): Promise<PaginatedResult<DocumentRecord>> {
+    let items = this.getState(orgId).documents.filter(d => d.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(d => d.name.toLowerCase().includes(q));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    return {
+      data: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+      page,
+      pageSize
+    };
   }
 
-  async uploadDocument(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord> {
+  async getDocumentById(orgId: string, id: string): Promise<DocumentRecord | null> {
+    return this.getState(orgId).documents.find(d => d.id === id && d.organizationId === orgId) || null;
+  }
+
+  async createDocumentMetadata(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord> {
     const st = this.getState(orgId);
     const newDoc: DocumentRecord = {
       ...doc,
@@ -584,6 +668,17 @@ export class LocalRepository implements IDataRepository {
       createdAt: new Date().toISOString()
     };
     st.documents = [newDoc, ...st.documents];
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "CREAR_DOCUMENTO",
+      entityType: "document",
+      entityId: newDoc.id,
+      details: "Documento registrado: " + newDoc.name,
+      timestamp: new Date().toISOString()
+    });
     this.saveState(st);
     return newDoc;
   }
@@ -591,28 +686,51 @@ export class LocalRepository implements IDataRepository {
   async deleteDocument(orgId: string, id: string): Promise<boolean> {
     const st = this.getState(orgId);
     st.documents = st.documents.filter(d => !(d.id === id && d.organizationId === orgId));
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "ELIMINAR_DOCUMENTO",
+      entityType: "document",
+      entityId: id,
+      details: "Documento eliminado",
+      timestamp: new Date().toISOString()
+    });
     this.saveState(st);
     return true;
   }
 
-  async getAuditLogs(orgId: string): Promise<AuditLog[]> {
-    return this.getState(orgId).auditLogs.filter(a => a.organizationId === orgId);
+  async getAuditLogs(orgId: string, params?: PaginationParams): Promise<PaginatedResult<AuditLog>> {
+    let items = this.getState(orgId).auditLogs.filter(a => a.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(a => a.action.toLowerCase().includes(q) || a.details.toLowerCase().includes(q));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    return {
+      data: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+      page,
+      pageSize
+    };
   }
 
   async addAuditLog(orgId: string, log: Omit<AuditLog, "id" | "organizationId" | "timestamp">): Promise<AuditLog> {
     const st = this.getState(orgId);
     const newLog: AuditLog = {
       ...log,
-      id: "aud-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+      id: "log-" + Date.now(),
       organizationId: orgId,
       timestamp: new Date().toISOString()
     };
-    st.auditLogs = [newLog, ...st.auditLogs];
+    st.auditLogs.unshift(newLog);
     this.saveState(st);
     return newLog;
   }
 
-  async getNotifications(orgId: string): Promise<NotificationItem[]> {
+    async getNotifications(orgId: string): Promise<NotificationItem[]> {
     return this.getState(orgId).notifications.filter(n => n.organizationId === orgId);
   }
 }

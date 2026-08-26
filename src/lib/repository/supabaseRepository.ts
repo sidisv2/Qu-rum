@@ -1,4 +1,5 @@
 ﻿import { IDataRepository, PaginatedResult, PaginationParams, PaymentParams } from "./types";
+import { calculateMargin, safeRound, sanitizeCsvField } from "../utils/formatters";
 import { supabase, isSupabaseConfigured } from "../supabase/client";
 import {
   Organization,
@@ -935,44 +936,120 @@ export class SupabaseRepository implements IDataRepository {
     return data;
   }
 
-  async getTasks(orgId: string): Promise<Task[]> {
+  async getTasks(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Task>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("tasks").select("*").eq("organization_id", orgId);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("tasks").select("*", { count: "exact" }).eq("organization_id", orgId);
+
+    if (params?.search) {
+      query = query.or("title.ilike.%" + params.search + "%,description.ilike.%" + params.search + "%");
+    }
+    if (params?.status) {
+      query = query.eq("status", params.status);
+    }
+
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((t: any) => ({
+
+    const mapped: Task[] = (data || []).map((t: any) => ({
       id: t.id,
       organizationId: t.organization_id,
       title: t.title,
-      description: t.description,
+      description: t.description || "",
       priority: t.priority,
-      status: t.status,
       dueDate: t.due_date,
-      suggestedByAi: t.suggested_by_ai,
+      assignedTo: t.assigned_to,
+      status: t.status,
       createdAt: t.created_at
     }));
+
+    return {
+      data: mapped,
+      total: count || mapped.length,
+      page,
+      pageSize
+    };
+  }
+
+  async getTaskById(orgId: string, id: string): Promise<Task | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("tasks").select("*").eq("id", id).eq("organization_id", orgId).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      title: data.title,
+      description: data.description || "",
+      priority: data.priority,
+      dueDate: data.due_date,
+      assignedTo: data.assigned_to,
+      status: data.status,
+      createdAt: data.created_at
+    };
   }
 
   async createTask(orgId: string, task: Omit<Task, "id" | "organizationId" | "createdAt">): Promise<Task> {
     this.checkClient();
     const { data, error } = await supabase!.from("tasks").insert({
       organization_id: orgId,
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      status: task.status,
-      due_date: task.dueDate
+      title: sanitizeCsvField(task.title),
+      description: task.description || null,
+      priority: task.priority || "medium",
+      due_date: task.dueDate,
+      assigned_to: task.assignedTo || null,
+      status: task.status || "pending"
     }).select().single();
+
     if (error) throw error;
-    return { ...task, id: data.id, organizationId: orgId, createdAt: data.created_at };
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      title: data.title,
+      description: data.description || "",
+      priority: data.priority,
+      dueDate: data.due_date,
+      assignedTo: data.assigned_to,
+      status: data.status,
+      createdAt: data.created_at
+    };
+  }
+
+  async updateTask(orgId: string, id: string, data: Partial<Task>): Promise<Task> {
+    this.checkClient();
+    const updatePayload: any = {};
+    if (data.title !== undefined) updatePayload.title = sanitizeCsvField(data.title);
+    if (data.description !== undefined) updatePayload.description = data.description;
+    if (data.priority !== undefined) updatePayload.priority = data.priority;
+    if (data.dueDate !== undefined) updatePayload.due_date = data.dueDate;
+    if (data.assignedTo !== undefined) updatePayload.assigned_to = data.assignedTo;
+    if (data.status !== undefined) updatePayload.status = data.status;
+
+    const { data: updated, error } = await supabase!.from("tasks").update(updatePayload).eq("id", id).eq("organization_id", orgId).select().single();
+    if (error) throw error;
+    return {
+      id: updated.id,
+      organizationId: updated.organization_id,
+      title: updated.title,
+      description: updated.description || "",
+      priority: updated.priority,
+      dueDate: updated.due_date,
+      assignedTo: updated.assigned_to,
+      status: updated.status,
+      createdAt: updated.created_at
+    };
   }
 
   async toggleTaskStatus(orgId: string, id: string): Promise<Task> {
-    this.checkClient();
-    const { data: cur } = await supabase!.from("tasks").select("status").eq("id", id).single();
-    const next = cur?.status === "completed" ? "pending" : "completed";
-    const { data, error } = await supabase!.from("tasks").update({ status: next }).eq("id", id).eq("organization_id", orgId).select().single();
-    if (error) throw error;
-    return data;
+    const cur = await this.getTaskById(orgId, id);
+    if (!cur) throw new Error("Task not found");
+    const nextStatus = cur.status === "completed" ? "pending" : "completed";
+    return this.updateTask(orgId, id, { status: nextStatus });
   }
 
   async deleteTask(orgId: string, id: string): Promise<boolean> {
@@ -982,79 +1059,163 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
-  async getDocuments(orgId: string): Promise<DocumentRecord[]> {
+  async getDocuments(orgId: string, params?: PaginationParams): Promise<PaginatedResult<DocumentRecord>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("documents").select("*").eq("organization_id", orgId).is("deleted_at", null);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("documents").select("*", { count: "exact" }).eq("organization_id", orgId);
+
+    if (params?.search) {
+      query = query.ilike("name", "%" + params.search + "%");
+    }
+
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((d: any) => ({
+
+    const mapped: DocumentRecord[] = (data || []).map((d: any) => ({
       id: d.id,
       organizationId: d.organization_id,
       name: d.name,
-      fileUrl: d.storage_path || "#",
-      docDate: d.created_at.split("T")[0],
-      category: d.category || "General",
-      fileSize: d.file_size || "1.2 MB",
+      fileUrl: d.storage_path,
+      category: d.category || "other",
+      relatedCustomerId: d.related_customer_id,
+      relatedSupplierId: d.related_supplier_id,
+      docDate: d.doc_date || d.created_at.split("T")[0],
+      fileSize: d.size_bytes ? Math.round(d.size_bytes / 1024) + " KB" : undefined,
       createdAt: d.created_at
     }));
+
+    return {
+      data: mapped,
+      total: count || mapped.length,
+      page,
+      pageSize
+    };
   }
 
-  async uploadDocument(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord> {
+  async getDocumentById(orgId: string, id: string): Promise<DocumentRecord | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("documents").select("*").eq("id", id).eq("organization_id", orgId).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      name: data.name,
+      fileUrl: data.storage_path,
+      category: data.category || "other",
+      relatedCustomerId: data.related_customer_id,
+      relatedSupplierId: data.related_supplier_id,
+      docDate: data.doc_date || data.created_at.split("T")[0],
+      fileSize: data.size_bytes ? Math.round(data.size_bytes / 1024) + " KB" : undefined,
+      createdAt: data.created_at
+    };
+  }
+
+  async createDocumentMetadata(orgId: string, doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<DocumentRecord> {
     this.checkClient();
     const { data, error } = await supabase!.from("documents").insert({
       organization_id: orgId,
-      name: doc.name,
-      category: doc.category,
-      file_size: doc.fileSize
+      name: sanitizeCsvField(doc.name),
+      type: doc.category || "document",
+      category: doc.category || "other",
+      size_bytes: 0,
+      storage_path: doc.fileUrl,
+      doc_date: doc.docDate || new Date().toISOString().split("T")[0],
+      related_customer_id: doc.relatedCustomerId || null,
+      related_supplier_id: doc.relatedSupplierId || null
     }).select().single();
+
     if (error) throw error;
-    return { ...doc, id: data.id, organizationId: orgId, createdAt: data.created_at };
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      name: data.name,
+      fileUrl: data.storage_path,
+      category: data.category || "other",
+      relatedCustomerId: data.related_customer_id,
+      relatedSupplierId: data.related_supplier_id,
+      docDate: data.doc_date,
+      createdAt: data.created_at
+    };
   }
 
   async deleteDocument(orgId: string, id: string): Promise<boolean> {
     this.checkClient();
-    const { error } = await supabase!.from("documents").update({ deleted_at: new Date().toISOString() }).eq("id", id).eq("organization_id", orgId);
+    const { error } = await supabase!.from("documents").delete().eq("id", id).eq("organization_id", orgId);
     if (error) throw error;
     return true;
   }
 
-  async getAuditLogs(orgId: string): Promise<AuditLog[]> {
+  async getAuditLogs(orgId: string, params?: PaginationParams): Promise<PaginatedResult<AuditLog>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("audit_logs").select("*").eq("organization_id", orgId).order("created_at", { ascending: false });
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("audit_logs").select("*", { count: "exact" }).eq("organization_id", orgId);
+
+    if (params?.search) {
+      query = query.or("action.ilike.%" + params.search + "%,details.ilike.%" + params.search + "%");
+    }
+
+    query = query.order("timestamp", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((a: any) => ({
+
+    const mapped: AuditLog[] = (data || []).map((a: any) => ({
       id: a.id,
       organizationId: a.organization_id,
-      userId: a.user_id,
-      userName: a.user_name,
+      userId: a.user_id || "sistema",
+      userName: a.user_name || "Usuario",
       action: a.action,
       entityType: a.entity_type,
       entityId: a.entity_id,
       details: a.details,
-      timestamp: a.created_at
+      timestamp: a.timestamp
     }));
+
+    return {
+      data: mapped,
+      total: count || mapped.length,
+      page,
+      pageSize
+    };
   }
 
   async addAuditLog(orgId: string, log: Omit<AuditLog, "id" | "organizationId" | "timestamp">): Promise<AuditLog> {
     this.checkClient();
     const { data, error } = await supabase!.from("audit_logs").insert({
       organization_id: orgId,
-      user_id: log.userId || "usr-1",
+      user_id: log.userId && log.userId !== "usr-local" ? log.userId : null,
       user_name: log.userName || "Usuario",
       action: log.action,
       entity_type: log.entityType,
-      entityId: log.entityId,
+      entity_id: log.entityId && log.entityId.length === 36 ? log.entityId : null,
       details: log.details
     }).select().single();
+
     if (error) throw error;
     return {
-      ...log,
       id: data.id,
-      organizationId: orgId,
-      timestamp: data.created_at
+      organizationId: data.organization_id,
+      userId: data.user_id || "sistema",
+      userName: data.user_name || "Usuario",
+      action: data.action,
+      entityType: data.entity_type,
+      entityId: data.entity_id,
+      details: data.details,
+      timestamp: data.timestamp
     };
   }
 
-  async getNotifications(orgId: string): Promise<NotificationItem[]> {
+    async getNotifications(orgId: string): Promise<NotificationItem[]> {
     return [];
   }
 }

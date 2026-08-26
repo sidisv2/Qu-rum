@@ -195,8 +195,8 @@ export interface Quote {
   createdAt: string;
 }
 
-export type TaskPriority = 'high' | 'medium' | 'low';
-export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface Task {
   id: string;

@@ -173,9 +173,9 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setReceivables(rec.data);
           setPayables(pay.data);
           setQuotes(q.data);
-          setTasks(t);
-          setDocuments(d);
-          setAuditLogs(a);
+          setTasks(t.data);
+          setDocuments(d.data);
+          setAuditLogs(a.data);
           setNotifications(n);
         }
       } catch (err) {
@@ -344,7 +344,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const uploadDocument = async (d: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">): Promise<void> => {
     if (!currentOrg) return;
-    const created = await repo.uploadDocument(currentOrg.id, d);
+    const created = await repo.createDocumentMetadata(currentOrg.id, d);
     setDocuments(prev => [created, ...prev]);
   };
 
