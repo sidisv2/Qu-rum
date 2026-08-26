@@ -475,7 +475,7 @@ export class SupabaseRepository implements IDataRepository {
     };
   }
 
-  async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">): Promise<Sale> {
+  async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">, idempotencyKey?: string): Promise<Sale> {
     this.checkClient();
     const { data: sData, error: sErr } = await supabase!.from("sales").insert({
       organization_id: orgId,

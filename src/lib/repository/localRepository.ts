@@ -240,7 +240,7 @@ export class LocalRepository implements IDataRepository {
     return s || null;
   }
 
-  async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">): Promise<Sale> {
+  async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">, _idempotencyKey?: string): Promise<Sale> {
     const st = this.getState(orgId);
     const calculatedSubtotal = (sale.items || []).reduce((acc, it) => acc + safeRound(it.quantity * it.unitPrice, 2), 0);
     const cleanTotal = safeRound(Math.max(0, calculatedSubtotal - (sale.discount || 0)), 2);
@@ -275,6 +275,18 @@ export class LocalRepository implements IDataRepository {
         ...st.receivables
       ];
     }
+
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "CREAR_VENTA",
+      entityType: "sale",
+      entityId: newSale.id,
+      details: "Venta registrada por " + newSale.total,
+      timestamp: new Date().toISOString()
+    });
 
     this.saveState(st);
     return newSale;

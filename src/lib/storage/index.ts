@@ -1,13 +1,27 @@
-﻿import { isSupabaseConfigured } from "../supabase/client";
+import { isSupabaseConfigured } from "../supabase/client";
 import { IStorageRepository } from "./types";
 import { SupabaseStorageRepository } from "./supabaseStorage";
 import { LocalStorageRepository } from "./localStorage";
 
 let storageRepoInstance: IStorageRepository | null = null;
 
-export function getStorageRepository(): IStorageRepository {
+const getEnvVar = (key: string): string => {
+  const anyMeta = import.meta as any;
+  if (typeof anyMeta !== "undefined" && anyMeta.env) {
+    return anyMeta.env[key] || "";
+  }
+  if (typeof process !== "undefined" && process.env) {
+    return process.env[key] || "";
+  }
+  return "";
+};
+
+export function getStorageRepository(forceLocal: boolean = false): IStorageRepository {
+  if (forceLocal) {
+    return new LocalStorageRepository();
+  }
   if (!storageRepoInstance) {
-    const dataMode = (import.meta as any).env?.VITE_DATA_MODE;
+    const dataMode = getEnvVar("VITE_DATA_MODE");
     if (dataMode === "supabase" && isSupabaseConfigured()) {
       storageRepoInstance = new SupabaseStorageRepository();
     } else {
