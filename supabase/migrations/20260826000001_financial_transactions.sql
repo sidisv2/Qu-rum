@@ -1,5 +1,18 @@
 ﻿-- Migration: 20260826000001_financial_transactions.sql
--- Subfase 4D.3: Transacciones atómicas de Ventas y Presupuestos con recálculo de importes en PostgreSQL
+-- Subfase 4D.3: Transacciones atomicas de Ventas y Presupuestos con recalculo de importes en PostgreSQL
+
+-- Asegurar columna idempotency_key en sales si no existe
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sales' AND column_name = 'idempotency_key') THEN
+        ALTER TABLE public.sales ADD COLUMN idempotency_key VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'sales' AND column_name = 'sale_date') THEN
+        ALTER TABLE public.sales ADD COLUMN sale_date DATE;
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_idemp ON public.sales(organization_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION create_sale_transaction(
     p_organization_id UUID,
@@ -31,9 +44,9 @@ DECLARE
     v_created_at TIMESTAMPTZ := now();
     v_existing_sale_id UUID;
 BEGIN
-    -- 1. Validar autorización de tenant mediante RLS
+    -- 1. Validar autorizacion de tenant mediante RLS
     IF NOT is_org_member(p_organization_id) THEN
-        RAISE EXCEPTION 'Acceso denegado a la organización especificada';
+        RAISE EXCEPTION 'Acceso denegado a la organizacion especificada';
     END IF;
 
     -- 2. Idempotencia: Verificar si la clave ya existe
@@ -44,34 +57,30 @@ BEGIN
         IF v_existing_sale_id IS NOT NULL THEN
             RETURN jsonb_build_object(
                 'id', v_existing_sale_id,
-                'status', 'idempotent_replay'
+                'status', 'idempotent_duplicate',
+                'message', 'Venta ya procesada previamente con esta idempotency_key'
             );
         END IF;
     END IF;
 
-    -- 3. Calcular subtotal de las líneas en servidor para evitar fraude de montos
+    -- 3. Calcular subtotal de forma deterministica a partir de los items
     FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(
         product_id UUID,
         description TEXT,
         quantity NUMERIC(15,2),
-        unit_price NUMERIC(15,2),
-        unit_cost NUMERIC(15,2)
+        unit_price NUMERIC(15,2)
     )
     LOOP
         v_qty := COALESCE(v_item.quantity, 1);
         v_price := COALESCE(v_item.unit_price, 0);
-        IF v_qty <= 0 THEN
-            RAISE EXCEPTION 'La cantidad de cada item debe ser mayor a cero';
-        END IF;
-        IF v_price < 0 THEN
-            RAISE EXCEPTION 'El precio unitario no puede ser negativo';
-        END IF;
-        
-        v_item_subtotal := ROUND(v_qty * v_price, 2);
+        v_item_subtotal := round(v_qty * v_price, 2);
         v_subtotal := v_subtotal + v_item_subtotal;
     END LOOP;
 
-    v_total := GREATEST(0, ROUND(v_subtotal - COALESCE(p_discount, 0), 2));
+    v_total := round(v_subtotal - COALESCE(p_discount, 0), 2);
+    IF v_total < 0 THEN
+        v_total := 0;
+    END IF;
 
     -- 4. Insertar cabecera de Venta
     INSERT INTO sales (
@@ -87,62 +96,56 @@ BEGIN
         status,
         payment_status,
         idempotency_key,
-        created_at
+        created_at,
+        updated_at
     ) VALUES (
         p_organization_id,
         p_customer_id,
         p_customer_name,
         p_sale_number,
-        p_sale_date,
+        COALESCE(p_sale_date, CURRENT_DATE),
         v_subtotal,
         COALESCE(p_discount, 0),
-        0,
+        0.00,
         v_total,
         COALESCE(p_status, 'confirmed'),
-        COALESCE(p_payment_status, 'pending'),
+        COALESCE(p_payment_status, 'unpaid'),
         p_idempotency_key,
+        v_created_at,
         v_created_at
     ) RETURNING id INTO v_sale_id;
 
-    -- 5. Insertar líneas con snapshot histórico
+    -- 5. Insertar lineas de venta
     FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(
         product_id UUID,
         description TEXT,
         quantity NUMERIC(15,2),
-        unit_price NUMERIC(15,2),
-        unit_cost NUMERIC(15,2)
+        unit_price NUMERIC(15,2)
     )
     LOOP
         v_qty := COALESCE(v_item.quantity, 1);
         v_price := COALESCE(v_item.unit_price, 0);
-        v_cost := COALESCE(v_item.unit_cost, 0);
-        v_item_subtotal := ROUND(v_qty * v_price, 2);
+        v_item_subtotal := round(v_qty * v_price, 2);
 
         INSERT INTO sale_items (
-            organization_id,
             sale_id,
             product_id,
             description,
             quantity,
             unit_price,
-            unit_cost,
-            subtotal,
-            created_at
+            subtotal
         ) VALUES (
-            p_organization_id,
             v_sale_id,
             v_item.product_id,
-            COALESCE(v_item.description, 'Producto/Servicio'),
+            v_item.description,
             v_qty,
             v_price,
-            v_cost,
-            v_item_subtotal,
-            v_created_at
+            v_item_subtotal
         );
     END LOOP;
 
-    -- 6. Si la venta es a crédito o pago pendiente, generar automáticamente la cuenta por cobrar
-    IF p_payment_status = 'pending' OR p_payment_status = 'partial' THEN
+    -- 6. Si el pago es parcial o pendiente, crear o actualizar la Cuenta por Cobrar (Receivable)
+    IF p_payment_status IN ('unpaid', 'partial') AND v_total > 0 THEN
         INSERT INTO receivables (
             organization_id,
             sale_id,
@@ -153,7 +156,8 @@ BEGIN
             balance,
             due_date,
             status,
-            created_at
+            created_at,
+            updated_at
         ) VALUES (
             p_organization_id,
             v_sale_id,
@@ -162,40 +166,22 @@ BEGIN
             p_customer_name,
             v_total,
             v_total,
-            p_sale_date + INTERVAL '30 days',
+            CURRENT_DATE + INTERVAL '30 days',
             'pending',
+            v_created_at,
             v_created_at
         );
     END IF;
 
-    -- 7. Registrar Auditoría Server-Side
-    INSERT INTO audit_logs (
-        organization_id,
-        user_id,
-        user_name,
-        action,
-        entity_type,
-        entity_id,
-        details,
-        created_at
-    ) VALUES (
-        p_organization_id,
-        auth.uid(),
-        'Usuario Autenticado',
-        'CREAR_VENTA',
-        'sale',
-        v_sale_id,
-        'Venta ' || p_sale_number || ' creada por monto ' || v_total,
-        v_created_at
-    );
-
+    -- 7. Retornar el resultado estructurado
     RETURN jsonb_build_object(
-        'id', v_sale_id,
+        'sale_id', v_sale_id,
         'organization_id', p_organization_id,
         'sale_number', p_sale_number,
         'subtotal', v_subtotal,
         'total', v_total,
-        'created_at', v_created_at
+        'status', COALESCE(p_status, 'confirmed'),
+        'payment_status', COALESCE(p_payment_status, 'unpaid')
     );
 END;
 $$;
