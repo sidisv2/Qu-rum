@@ -1,5 +1,8 @@
 ﻿import React, { useState } from "react";
-import { OrgProvider } from "./context/OrgContext";
+import { AuthProvider } from "./context/AuthContext";
+import { OrgProvider, useOrg } from "./context/OrgContext";
+import { ToastProvider } from "./components/ui/Toast";
+import { RequireAuth } from "./components/auth/RequireAuth";
 import { Sidebar, NavSection } from "./components/layout/Sidebar";
 import { Header } from "./components/layout/Header";
 import { DashboardView } from "./components/dashboard/DashboardView";
@@ -19,7 +22,6 @@ import { DirectorIAView } from "./components/director-ia/DirectorIAView";
 import { ImportCSVView } from "./components/import-csv/ImportCSVView";
 import { AuditView } from "./components/audit/AuditView";
 import { SettingsView } from "./components/settings/SettingsView";
-import { ToastProvider } from "./components/ui/Toast";
 
 // Simple robust Error Boundary
 class ErrorBoundary extends React.Component<
@@ -185,11 +187,17 @@ export const AppContent: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <OrgProvider>
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
-    </OrgProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <RequireAuth>
+          <OrgProvider>
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
+          </OrgProvider>
+        </RequireAuth>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 };
 
