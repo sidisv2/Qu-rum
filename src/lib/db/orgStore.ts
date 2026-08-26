@@ -19,6 +19,44 @@ import { getInitialDemoState } from "../demo/initialData";
 
 const STORAGE_PREFIX = "direx_store_v1_";
 
+// Memory storage fallback for Node/testing environments where window.localStorage is absent
+const memoryStore: Record<string, string> = {};
+
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        return window.localStorage.getItem(key);
+      } catch {
+        return memoryStore[key] || null;
+      }
+    }
+    return memoryStore[key] || null;
+  },
+  setItem: (key: string, value: string): void => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        memoryStore[key] = value;
+      }
+    } else {
+      memoryStore[key] = value;
+    }
+  },
+  removeItem: (key: string): void => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        delete memoryStore[key];
+      }
+    } else {
+      delete memoryStore[key];
+    }
+  }
+};
+
 export interface AppState {
   currentUser: User | null;
   currentOrg: Organization | null;
@@ -48,12 +86,12 @@ export class OrganizationStore {
   };
 
   public static loadState(): AppState {
-    const orgId = localStorage.getItem(STORAGE_PREFIX + "current_org_id") || "org-demo-100";
+    const orgId = safeStorage.getItem(STORAGE_PREFIX + "current_org_id") || "org-demo-100";
     return this.loadOrgState(orgId);
   }
 
   public static loadOrgState(orgId: string): AppState {
-    const raw = localStorage.getItem(STORAGE_PREFIX + orgId);
+    const raw = safeStorage.getItem(STORAGE_PREFIX + orgId);
 
     if (raw) {
       try {
@@ -63,7 +101,7 @@ export class OrganizationStore {
           currentUser: parsed.currentUser || this.defaultUser
         };
       } catch (e) {
-        console.error("Error reading localStorage, reverting to demo state", e);
+        console.error("Error reading storage, reverting to demo state", e);
       }
     }
 
@@ -114,12 +152,12 @@ export class OrganizationStore {
 
   public static saveState(state: AppState): void {
     if (!state.currentOrg) return;
-    localStorage.setItem(STORAGE_PREFIX + "current_org_id", state.currentOrg.id);
-    localStorage.setItem(STORAGE_PREFIX + state.currentOrg.id, JSON.stringify(state));
+    safeStorage.setItem(STORAGE_PREFIX + "current_org_id", state.currentOrg.id);
+    safeStorage.setItem(STORAGE_PREFIX + state.currentOrg.id, JSON.stringify(state));
   }
 
   public static resetToDemo(orgId: string = "org-demo-100"): AppState {
-    localStorage.removeItem(STORAGE_PREFIX + orgId);
+    safeStorage.removeItem(STORAGE_PREFIX + orgId);
     return this.loadOrgState(orgId);
   }
 }
