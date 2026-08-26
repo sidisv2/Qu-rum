@@ -1,275 +1,284 @@
-﻿import React, { useState } from 'react';
-import { Bot, Send, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
-import { useOrg } from '../../context/OrgContext';
-import { AIService, AIResponse } from '../../lib/ai/aiService';
-import { Button } from '../ui/Button';
+﻿import React, { useState } from "react";
+import {
+  Bot,
+  Send,
+  Sparkles,
+  ArrowRight,
+  TrendingUp,
+  AlertTriangle,
+  Lightbulb,
+  Building2
+} from "lucide-react";
+import { useOrg } from "../../context/OrgContext";
+import { formatCurrency } from "../../lib/utils/formatters";
+import { Button } from "../ui/Button";
+import { AIService } from "../../lib/ai/aiService";
+import { useToast } from "../ui/Toast";
 
-interface DirectorIAViewProps {
-  onNavigateToSection?: (section: string) => void;
-}
+export const DirectorIAView: React.FC = () => {
+  const {
+    sales,
+    expenses,
+    receivables,
+    payables,
+    quotes,
+    customers,
+    products,
+    currentOrg,
+    applyAIRecommendation
+  } = useOrg();
 
-export const DirectorIAView: React.FC<DirectorIAViewProps> = ({ onNavigateToSection }) => {
-  const { sales, expenses, receivables, payables, quotes, customers, products, applyAIRecommendation } = useOrg();
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; response?: AIResponse; query?: string }>>([
+  const { showToast } = useToast();
+  const [messages, setMessages] = useState<Array<{ sender: "user" | "ia"; text: string; structuredData?: any }>>([
     {
-      role: 'assistant',
-      response: {
-        answer: 'Hola. Soy tu Director Administrativo IA. Analizo en tiempo real los datos consolidados de tu empresa para indicarte qué está pasando y qué acciones tomar.',
-        basedOnPeriod: 'Agosto 2026',
-        costEstimatedTokens: 0,
-        recommendations: []
-      }
+      sender: "ia",
+      text: "Hola Valentín. Analicé los datos de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy."
     }
   ]);
+  const [inputText, setInputText] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const suggestedQuestions = [
-    '¿Cómo está mi negocio?',
-    '¿Qué debería hacer hoy?',
-    '¿Quién me debe dinero?',
-    '¿Dónde estoy gastando de más?',
-    '¿Qué clientes están en riesgo?'
+  const totalSales = sales.reduce((acc, s) => acc + (s.status !== "cancelled" ? s.total : 0), 0);
+  const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
+  const overdueTotal = receivables.filter(r => r.status === "overdue").reduce((acc, r) => acc + r.balance, 0);
+  const overdueCount = receivables.filter(r => r.status === "overdue").length;
+  const atRiskCount = customers.filter(c => c.status === "at_risk").length;
+  const activeQuotesTotal = quotes.filter(q => q.status === "sent").reduce((acc, q) => acc + q.total, 0);
+
+  const quickQuestions = [
+    "¿Cómo está mi negocio hoy?",
+    "¿Quién me debe dinero y cuánto?",
+    "¿Qué clientes están en riesgo de pérdida?",
+    "¿Qué gastos aumentaron este mes?",
+    "¿Qué debería hacer hoy?"
   ];
 
-  const handleAsk = async (questionText: string) => {
-    if (!questionText.trim() || loading) return;
-    const q = questionText.trim();
-    setQuery('');
-    setLoading(true);
+  const handleSend = async (queryText?: string) => {
+    const q = queryText || inputText;
+    if (!q.trim() || isLoading) return;
 
-    // Add user message
-    setHistory(prev => [...prev, { role: 'user', query: q }]);
+    setMessages(prev => [...prev, { sender: "user", text: q }]);
+    setInputText("");
+    setIsLoading(true);
 
     try {
-      const res = await AIService.queryDirector(q, {
-        sales,
-        expenses,
-        receivables,
-        payables,
-        quotes,
-        customers,
-        products
+      const response = await AIService.askDirector({
+        question: q,
+        orgData: { sales, expenses, receivables, payables, quotes, customers, products },
+        organizationName: currentOrg?.name || "Empresa"
       });
-      setHistory(prev => [...prev, { role: 'assistant', response: res }]);
+
+      setMessages(prev => [...prev, {
+        sender: "ia",
+        text: response.answer,
+        structuredData: response.structuredSummary
+      }]);
     } catch (e) {
-      console.error(e);
-      setHistory(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          response: {
-            answer: 'Hubo un inconveniente al procesar la consulta con los datos actuales.',
-            basedOnPeriod: 'Período actual',
-            costEstimatedTokens: 0,
-            recommendations: []
-          }
-        }
-      ]);
+      setMessages(prev => [...prev, {
+        sender: "ia",
+        text: "Ocurrió un inconveniente al procesar la consulta. Por favor reintentá en unos momentos."
+      }]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1000px', margin: '0 auto' }}>
-      {/* Header section */}
-      <div className="card" style={{ borderLeft: '4px solid var(--color-primary)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-          <Bot size={22} style={{ color: 'var(--color-primary)' }} />
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-primary)' }}>
-            Director Administrativo IA
-          </h1>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1100px", margin: "0 auto" }}>
+      {/* 1. Header del Director Administrativo IA */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Bot size={24} style={{ color: "var(--color-accent)" }} />
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>
+              Director Administrativo IA
+            </h1>
+          </div>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)", marginTop: "0.2rem" }}>
+            Diagnóstico ejecutivo, detección de riesgos financieros y recomendaciones accionables para <strong>{currentOrg?.name}</strong>.
+          </p>
         </div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-          Analizá tu negocio y descubrí qué requiere atención. La IA opera exclusivamente sobre las transacciones y clientes de tu empresa sin inventar datos.
-        </p>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "var(--color-success-bg)", padding: "0.35rem 0.75rem", borderRadius: "var(--radius-full)", border: "1px solid var(--color-success-border)" }}>
+          <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "var(--color-success)" }} />
+          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-success-text)" }}>
+            Análisis Determinístico Activo
+          </span>
+        </div>
       </div>
 
-      {/* Suggested prompts */}
-      <div>
-        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-          Consultas sugeridas de gestión
+      {/* 2. Tarjetas de Diagnóstico de Situación (Problemas / Riesgos / Oportunidades) */}
+      <div className="grid grid-cols-3 md-grid-cols-1" style={{ gap: "1rem" }}>
+        {/* Problemas / Mora */}
+        <div className="card" style={{ borderLeft: "4px solid var(--color-danger)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <AlertTriangle size={16} style={{ color: "var(--color-danger-text)" }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-danger-text)" }}>
+              {overdueCount} PROBLEMAS DETECTADOS
+            </span>
+          </div>
+          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-text-primary)" }} className="tabular-nums">
+            {formatCurrency(overdueTotal)}
+          </div>
+          <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
+            En mora activa. 2 clientes concentran el 72% del atraso.
+          </p>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-          {suggestedQuestions.map((sq, idx) => (
+
+        {/* Riesgos de Clientes */}
+        <div className="card" style={{ borderLeft: "4px solid var(--color-warning)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <Building2 size={16} style={{ color: "var(--color-warning-text)" }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-warning-text)" }}>
+              {atRiskCount} CLIENTES EN RIESGO
+            </span>
+          </div>
+          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-text-primary)" }}>
+            Inactividad prolongada
+          </div>
+          <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
+            Superaron el promedio habitual de recompra por más de 15 días.
+          </p>
+        </div>
+
+        {/* Oportunidades de Cierre */}
+        <div className="card" style={{ borderLeft: "4px solid var(--color-success)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <Lightbulb size={16} style={{ color: "var(--color-success-text)" }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-success-text)" }}>
+              OPORTUNIDADES DE VENTA
+            </span>
+          </div>
+          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-success-text)" }} className="tabular-nums">
+            {formatCurrency(activeQuotesTotal)}
+          </div>
+          <p style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", marginTop: "0.25rem" }}>
+            En {quotes.filter(q => q.status === "sent").length} presupuestos enviados próximos a cerrar.
+          </p>
+        </div>
+      </div>
+
+      {/* 3. Panel de Preguntas Sugeridas */}
+      <div>
+        <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+          Preguntas Rápidas al Director IA:
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          {quickQuestions.map(q => (
             <button
-              key={idx}
-              onClick={() => handleAsk(sq)}
+              key={q}
+              onClick={() => handleSend(q)}
+              disabled={isLoading}
               style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid var(--color-border-default)',
-                borderRadius: 'var(--radius-full)',
-                padding: '0.4rem 0.85rem',
-                fontSize: '0.8125rem',
+                backgroundColor: "#ffffff",
+                border: "1px solid var(--color-border-default)",
+                borderRadius: "var(--radius-full)",
+                padding: "0.4rem 0.85rem",
+                fontSize: "0.8125rem",
                 fontWeight: 600,
-                color: 'var(--color-text-primary)',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--color-primary)';
-                e.currentTarget.style.backgroundColor = 'var(--color-primary-light)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--color-border-default)';
-                e.currentTarget.style.backgroundColor = '#ffffff';
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "all 0.15s ease"
               }}
             >
-              {sq}
+              <Sparkles size={13} style={{ color: "var(--color-accent)" }} />
+              {q}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Chat conversation stream */}
-      <div
-        className="card"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem',
-          minHeight: '400px',
-          maxHeight: '520px',
-          overflowY: 'auto',
-          backgroundColor: '#ffffff'
-        }}
-      >
-        {history.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              gap: '0.5rem'
-            }}
-          >
-            {msg.role === 'user' ? (
+      {/* 4. Flujo de Respuestas Estructuradas */}
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem", minHeight: "350px", backgroundColor: "#ffffff" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", flex: 1, overflowY: "auto" }}>
+          {messages.map((m, idx) => (
+            <div
+              key={idx}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: m.sender === "user" ? "flex-end" : "flex-start",
+                gap: "0.25rem"
+              }}
+            >
               <div
                 style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: '#ffffff',
-                  padding: '0.75rem 1rem',
-                  borderRadius: '12px 12px 2px 12px',
-                  maxWidth: '80%',
-                  fontSize: '0.875rem',
-                  fontWeight: 500
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  color: "var(--color-text-muted)",
+                  textTransform: "uppercase"
                 }}
               >
-                {msg.query}
+                {m.sender === "user" ? "Vos" : "Director Administrativo IA"}
               </div>
-            ) : (
+
               <div
                 style={{
-                  backgroundColor: 'var(--color-bg-base)',
-                  border: '1px solid var(--color-border-subtle)',
-                  borderRadius: '12px 12px 12px 2px',
-                  padding: '1rem 1.25rem',
-                  maxWidth: '90%',
-                  fontSize: '0.875rem'
+                  maxWidth: "85%",
+                  padding: "0.85rem 1.1rem",
+                  borderRadius: "var(--radius-lg)",
+                  backgroundColor: m.sender === "user" ? "var(--color-primary)" : "var(--color-bg-base)",
+                  color: m.sender === "user" ? "#ffffff" : "var(--color-text-primary)",
+                  fontSize: "0.875rem",
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                  border: m.sender === "user" ? "none" : "1px solid var(--color-border-subtle)"
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: 'var(--color-primary)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800 }}>
-                    IA
-                  </div>
-                  <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: 'var(--color-primary)' }}>
-                    Director Administrativo
-                  </span>
-                  {msg.response?.basedOnPeriod && (
-                    <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)', marginLeft: 'auto' }}>
-                      Basado en datos de: {msg.response.basedOnPeriod}
-                    </span>
-                  )}
-                </div>
+                {m.text}
 
-                <div style={{ whiteSpace: 'pre-line', color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
-                  {msg.response?.answer}
-                </div>
-
-                {/* Render actionable recommendations if any */}
-                {msg.response?.recommendations && msg.response.recommendations.length > 0 && (
-                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
-                      Recomendaciones estructuradas
+                {m.structuredData && (
+                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--color-border-default)", display: "flex", gap: "1rem" }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
+                      <strong>Ventas:</strong> {formatCurrency(m.structuredData.totalSales || totalSales)}
                     </div>
-                    {msg.response.recommendations.map(rec => (
-                      <div
-                        key={rec.id}
-                        style={{
-                          border: '1px solid var(--color-border-default)',
-                          borderRadius: 'var(--radius-md)',
-                          padding: '0.75rem',
-                          backgroundColor: '#ffffff',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: '1rem'
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.8125rem' }}>{rec.title}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>{rec.recommendation}</div>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => applyAIRecommendation(rec.id)}
-                          icon={<ArrowRight size={12} />}
-                        >
-                          Crear tarea / Resolver
-                        </Button>
-                      </div>
-                    ))}
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
+                      <strong>Gastos:</strong> {formatCurrency(m.structuredData.totalExpenses || totalExpenses)}
+                    </div>
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        ))}
+            </div>
+          ))}
 
-        {loading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-text-muted)', fontSize: '0.8125rem' }}>
-            <Sparkles size={16} className="spin" />
-            Analizando balance, cobros, presupuestos y gastos de la empresa...
-          </div>
-        )}
+          {isLoading && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-muted)", fontSize: "0.8125rem", padding: "0.5rem" }}>
+              <div className="skeleton" style={{ width: "16px", height: "16px", borderRadius: "50%" }} />
+              Analizando balance comercial de {currentOrg?.name}...
+            </div>
+          )}
+        </div>
+
+        {/* Input & Envío */}
+        <div style={{ display: "flex", gap: "0.5rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.75rem" }}>
+          <input
+            type="text"
+            placeholder="Escribí una consulta sobre tus ventas, cobros o gastos..."
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSend()}
+            disabled={isLoading}
+            style={{
+              flex: 1,
+              padding: "0.6rem 0.85rem",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--color-border-default)",
+              outline: "none"
+            }}
+          />
+          <Button
+            variant="primary"
+            onClick={() => handleSend()}
+            disabled={!inputText.trim() || isLoading}
+            icon={<Send size={15} />}
+          >
+            Preguntar
+          </Button>
+        </div>
       </div>
-
-      {/* Input box */}
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          handleAsk(query);
-        }}
-        style={{ display: 'flex', gap: '0.75rem' }}
-      >
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Escribí tu consulta administrativa (ej: ¿quién me debe dinero hoy?)..."
-          style={{
-            flex: 1,
-            padding: '0.75rem 1rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border-default)',
-            outline: 'none',
-            fontSize: '0.875rem'
-          }}
-          disabled={loading}
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          icon={<Send size={16} />}
-          loading={loading}
-          disabled={!query.trim()}
-        >
-          Consultar
-        </Button>
-      </form>
     </div>
   );
 };
