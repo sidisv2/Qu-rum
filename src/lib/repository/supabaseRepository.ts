@@ -412,11 +412,12 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
-  async getSales(orgId: string): Promise<Sale[]> {
+  async getSales(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Sale>> {
     this.checkClient();
     const { data, error } = await supabase!.from("sales").select("*, sale_items(*)").eq("organization_id", orgId).order("sale_date", { ascending: false });
     if (error) throw error;
-    return (data || []).map((s: any) => ({
+    const mapped: Sale[] = (data || []).map((s: any) => ({
+
       id: s.id,
       organizationId: s.organization_id,
       customerId: s.customer_id,
@@ -439,6 +440,37 @@ export class SupabaseRepository implements IDataRepository {
       date: s.sale_date,
       createdAt: s.created_at
     }));
+    return { data: mapped, total: mapped.length, page: params?.page || 1, pageSize: params?.pageSize || 50 };
+  }
+
+  async getSaleById(orgId: string, id: string): Promise<Sale | null> {
+    this.checkClient();
+    const res = await supabase!.from("sales").select("*, sale_items(*)").eq("id", id).eq("organization_id", orgId).single();
+    if (res.error || !res.data) return null;
+    const data = res.data;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      customerId: data.customer_id,
+      customerName: data.customer_name,
+      saleNumber: data.sale_number,
+      items: (data.sale_items || []).map((it: any) => ({
+        id: it.id,
+        productId: it.product_id,
+        description: it.description,
+        quantity: Number(it.quantity),
+        unitPrice: Number(it.unit_price),
+        subtotal: Number(it.subtotal)
+      })),
+      subtotal: Number(data.subtotal),
+      discount: Number(data.discount),
+      tax: Number(data.tax),
+      total: Number(data.total),
+      status: data.status,
+      paymentStatus: data.payment_status,
+      date: data.sale_date,
+      createdAt: data.created_at
+    };
   }
 
   async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">): Promise<Sale> {
@@ -487,11 +519,12 @@ export class SupabaseRepository implements IDataRepository {
     return data;
   }
 
-  async getExpenses(orgId: string): Promise<Expense[]> {
+  async getExpenses(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Expense>> {
     this.checkClient();
     const { data, error } = await supabase!.from("expenses").select("*").eq("organization_id", orgId).order("expense_date", { ascending: false });
     if (error) throw error;
-    return (data || []).map((e: any) => ({
+    const mapped: Expense[] = (data || []).map((e: any) => ({
+
       id: e.id,
       organizationId: e.organization_id,
       supplierId: e.supplier_id,
@@ -504,6 +537,34 @@ export class SupabaseRepository implements IDataRepository {
       anomalyReason: e.anomaly_reason,
       createdAt: e.created_at
     }));
+    return { data: mapped, total: mapped.length, page: params?.page || 1, pageSize: params?.pageSize || 50 };
+  }
+
+  async getExpenseById(orgId: string, id: string): Promise<Expense | null> {
+    this.checkClient();
+    const res = await supabase!.from("expenses").select("*").eq("id", id).eq("organization_id", orgId).single();
+    if (res.error || !res.data) return null;
+    const data = res.data;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      supplierId: data.supplier_id,
+      supplierName: data.supplier_name,
+      category: data.category,
+      amount: Number(data.amount),
+      date: data.expense_date,
+      description: data.description,
+      isAnomaly: data.is_anomaly,
+      anomalyReason: data.anomaly_reason,
+      createdAt: data.created_at
+    };
+  }
+
+  async updateExpense(orgId: string, id: string, data: Partial<Expense>): Promise<Expense> {
+    this.checkClient();
+    const res = await supabase!.from("expenses").update(data).eq("id", id).eq("organization_id", orgId).select().single();
+    if (res.error) throw res.error;
+    return res.data;
   }
 
   async createExpense(orgId: string, expense: Omit<Expense, "id" | "organizationId" | "createdAt">): Promise<Expense> {
@@ -617,11 +678,12 @@ export class SupabaseRepository implements IDataRepository {
     };
   }
 
-  async getQuotes(orgId: string): Promise<Quote[]> {
+  async getQuotes(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Quote>> {
     this.checkClient();
     const { data, error } = await supabase!.from("quotes").select("*, quote_items(*)").eq("organization_id", orgId);
     if (error) throw error;
-    return (data || []).map((q: any) => ({
+    const mapped: Quote[] = (data || []).map((q: any) => ({
+
       id: q.id,
       organizationId: q.organization_id,
       customerId: q.customer_id,
@@ -640,6 +702,33 @@ export class SupabaseRepository implements IDataRepository {
       })),
       createdAt: q.created_at
     }));
+    return { data: mapped, total: mapped.length, page: params?.page || 1, pageSize: params?.pageSize || 50 };
+  }
+
+  async getQuoteById(orgId: string, id: string): Promise<Quote | null> {
+    this.checkClient();
+    const res = await supabase!.from("quotes").select("*, quote_items(*)").eq("id", id).eq("organization_id", orgId).single();
+    if (res.error || !res.data) return null;
+    const data = res.data;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      customerId: data.customer_id,
+      customerName: data.customer_name,
+      quoteNumber: data.quote_number,
+      total: Number(data.total),
+      validUntil: data.valid_until,
+      status: data.status,
+      items: (data.quote_items || []).map((it: any) => ({
+        id: it.id,
+        productId: it.product_id,
+        description: it.description,
+        quantity: Number(it.quantity),
+        unitPrice: Number(it.unit_price),
+        subtotal: Number(it.subtotal)
+      })),
+      createdAt: data.created_at
+    };
   }
 
   async createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote> {

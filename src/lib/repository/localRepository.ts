@@ -221,22 +221,60 @@ export class LocalRepository implements IDataRepository {
     return true;
   }
 
-  async getSales(orgId: string): Promise<Sale[]> {
-    return this.getState(orgId).sales.filter(s => s.organizationId === orgId);
+  async getSales(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Sale>> {
+    let items = this.getState(orgId).sales.filter(s => s.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(s => s.saleNumber.toLowerCase().includes(q) || (s.customerName && s.customerName.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getSaleById(orgId: string, id: string): Promise<Sale | null> {
+    const s = this.getState(orgId).sales.find(x => x.id === id && x.organizationId === orgId);
+    return s || null;
   }
 
   async createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">): Promise<Sale> {
     const st = this.getState(orgId);
-    const cleanTotal = safeRound(sale.total, 2);
+    const calculatedSubtotal = (sale.items || []).reduce((acc, it) => acc + safeRound(it.quantity * it.unitPrice, 2), 0);
+    const cleanTotal = safeRound(Math.max(0, calculatedSubtotal - (sale.discount || 0)), 2);
+
     const newSale: Sale = {
       ...sale,
       id: "sale-" + Date.now(),
       organizationId: orgId,
+      subtotal: calculatedSubtotal,
       total: cleanTotal,
-      subtotal: safeRound(sale.subtotal, 2),
       createdAt: new Date().toISOString()
     };
     st.sales = [newSale, ...st.sales];
+
+    // Generar cuenta por cobrar si está pendiente
+    if (sale.paymentStatus === "unpaid" || sale.paymentStatus === "partial") {
+      st.receivables = [
+        {
+          id: "rec-" + Date.now(),
+          organizationId: orgId,
+          saleId: newSale.id,
+          saleNumber: newSale.saleNumber,
+          customerId: newSale.customerId,
+          customerName: newSale.customerName,
+          amount: cleanTotal,
+          balance: cleanTotal,
+          dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+          status: "pending",
+          overdueDays: 0,
+          createdAt: new Date().toISOString()
+        },
+        ...st.receivables
+      ];
+    }
+
     this.saveState(st);
     return newSale;
   }
@@ -256,8 +294,22 @@ export class LocalRepository implements IDataRepository {
     return updated;
   }
 
-  async getExpenses(orgId: string): Promise<Expense[]> {
-    return this.getState(orgId).expenses.filter(e => e.organizationId === orgId);
+  async getExpenses(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Expense>> {
+    let items = this.getState(orgId).expenses.filter(e => e.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(e => e.description.toLowerCase().includes(q) || (e.supplierName && e.supplierName.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getExpenseById(orgId: string, id: string): Promise<Expense | null> {
+    const e = this.getState(orgId).expenses.find(x => x.id === id && x.organizationId === orgId);
+    return e || null;
   }
 
   async createExpense(orgId: string, expense: Omit<Expense, "id" | "organizationId" | "createdAt">): Promise<Expense> {
@@ -274,11 +326,73 @@ export class LocalRepository implements IDataRepository {
     return newExp;
   }
 
+  async updateExpense(orgId: string, id: string, data: Partial<Expense>): Promise<Expense> {
+    const st = this.getState(orgId);
+    let updated: Expense | null = null;
+    st.expenses = st.expenses.map(e => {
+      if (e.id === id && e.organizationId === orgId) {
+        updated = { ...e, ...data, amount: data.amount !== undefined ? safeRound(data.amount, 2) : e.amount };
+        return updated;
+      }
+      return e;
+    });
+    this.saveState(st);
+    if (!updated) throw new Error("Expense not found");
+    return updated;
+  }
+
   async deleteExpense(orgId: string, id: string): Promise<boolean> {
     const st = this.getState(orgId);
     st.expenses = st.expenses.filter(e => !(e.id === id && e.organizationId === orgId));
     this.saveState(st);
     return true;
+  }
+
+  async getQuotes(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Quote>> {
+    let items = this.getState(orgId).quotes.filter(q => q.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(qItem => qItem.quoteNumber.toLowerCase().includes(q) || (qItem.customerName && qItem.customerName.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getQuoteById(orgId: string, id: string): Promise<Quote | null> {
+    const q = this.getState(orgId).quotes.find(x => x.id === id && x.organizationId === orgId);
+    return q || null;
+  }
+
+  async createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote> {
+    const st = this.getState(orgId);
+    const newQuote: Quote = {
+      ...quote,
+      id: "quo-" + Date.now(),
+      organizationId: orgId,
+      total: safeRound(quote.total, 2),
+      createdAt: new Date().toISOString()
+    };
+    st.quotes = [newQuote, ...st.quotes];
+    this.saveState(st);
+    return newQuote;
+  }
+
+  async updateQuoteStatus(orgId: string, id: string, status: Quote["status"]): Promise<Quote> {
+    const st = this.getState(orgId);
+    let updated: Quote | null = null;
+    st.quotes = st.quotes.map(q => {
+      if (q.id === id && q.organizationId === orgId) {
+        updated = { ...q, status };
+        return updated;
+      }
+      return q;
+    });
+    this.saveState(st);
+    if (!updated) throw new Error("Quote not found");
+    return updated;
   }
 
   async getReceivables(orgId: string): Promise<Receivable[]> {
@@ -329,39 +443,6 @@ export class LocalRepository implements IDataRepository {
     this.saveState(st);
     if (!updatedPay) throw new Error("Payable not found");
     return updatedPay;
-  }
-
-  async getQuotes(orgId: string): Promise<Quote[]> {
-    return this.getState(orgId).quotes.filter(q => q.organizationId === orgId);
-  }
-
-  async createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote> {
-    const st = this.getState(orgId);
-    const newQuote: Quote = {
-      ...quote,
-      id: "quo-" + Date.now(),
-      organizationId: orgId,
-      total: safeRound(quote.total, 2),
-      createdAt: new Date().toISOString()
-    };
-    st.quotes = [newQuote, ...st.quotes];
-    this.saveState(st);
-    return newQuote;
-  }
-
-  async updateQuoteStatus(orgId: string, id: string, status: Quote["status"]): Promise<Quote> {
-    const st = this.getState(orgId);
-    let updated: Quote | null = null;
-    st.quotes = st.quotes.map(q => {
-      if (q.id === id && q.organizationId === orgId) {
-        updated = { ...q, status };
-        return updated;
-      }
-      return q;
-    });
-    this.saveState(st);
-    if (!updated) throw new Error("Quote not found");
-    return updated;
   }
 
   async getTasks(orgId: string): Promise<Task[]> {

@@ -168,11 +168,11 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCustomers(cRes.data);
           setSuppliers(sRes.data);
           setProducts(pRes.data);
-          setSales(sl);
-          setExpenses(ex);
+          setSales(sl.data);
+          setExpenses(ex.data);
           setReceivables(rec);
           setPayables(pay);
-          setQuotes(q);
+          setQuotes(q.data);
           setTasks(t);
           setDocuments(d);
           setAuditLogs(a);

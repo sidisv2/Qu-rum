@@ -25,6 +25,9 @@ export interface PaginationParams {
   page?: number;
   pageSize?: number;
   search?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface IDataRepository {
@@ -54,15 +57,24 @@ export interface IDataRepository {
   updateProduct(orgId: string, id: string, data: Partial<Product>): Promise<Product>;
   deleteProduct(orgId: string, id: string): Promise<boolean>;
 
-  // Sales & Sale Items
-  getSales(orgId: string): Promise<Sale[]>;
-  createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">): Promise<Sale>;
+  // Sales & Sale Items (Módulo Financiero - Fase 4D.3)
+  getSales(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Sale>>;
+  getSaleById(orgId: string, id: string): Promise<Sale | null>;
+  createSale(orgId: string, sale: Omit<Sale, "id" | "organizationId" | "createdAt">, idempotencyKey?: string): Promise<Sale>;
   updateSaleStatus(orgId: string, id: string, status: Sale["status"]): Promise<Sale>;
 
-  // Expenses
-  getExpenses(orgId: string): Promise<Expense[]>;
+  // Expenses (Módulo Financiero - Fase 4D.3)
+  getExpenses(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Expense>>;
+  getExpenseById(orgId: string, id: string): Promise<Expense | null>;
   createExpense(orgId: string, expense: Omit<Expense, "id" | "organizationId" | "createdAt">): Promise<Expense>;
+  updateExpense(orgId: string, id: string, data: Partial<Expense>): Promise<Expense>;
   deleteExpense(orgId: string, id: string): Promise<boolean>;
+
+  // Quotes & Items (Módulo Financiero - Fase 4D.3)
+  getQuotes(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Quote>>;
+  getQuoteById(orgId: string, id: string): Promise<Quote | null>;
+  createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote>;
+  updateQuoteStatus(orgId: string, id: string, status: Quote["status"]): Promise<Quote>;
 
   // Receivables & Payables
   getReceivables(orgId: string): Promise<Receivable[]>;
@@ -70,10 +82,7 @@ export interface IDataRepository {
   getPayables(orgId: string): Promise<Payable[]>;
   recordPaymentPayable(orgId: string, payableId: string, amount: number): Promise<Payable>;
 
-  // Quotes & Tasks
-  getQuotes(orgId: string): Promise<Quote[]>;
-  createQuote(orgId: string, quote: Omit<Quote, "id" | "organizationId" | "createdAt">): Promise<Quote>;
-  updateQuoteStatus(orgId: string, id: string, status: Quote["status"]): Promise<Quote>;
+  // Tasks
   getTasks(orgId: string): Promise<Task[]>;
   createTask(orgId: string, task: Omit<Task, "id" | "organizationId" | "createdAt">): Promise<Task>;
   toggleTaskStatus(orgId: string, id: string): Promise<Task>;
