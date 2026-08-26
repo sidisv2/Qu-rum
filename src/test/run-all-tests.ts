@@ -7,6 +7,7 @@ import { runFinancialModulesTestSuite } from "../lib/financial/__tests__/financi
 import { runPaymentsTestSuite } from "../lib/payments/__tests__/paymentsWorkflow.test";
 import { runTasksDocumentsTestSuite } from "../lib/tasks-documents/__tests__/tasksDocumentsWorkflow.test";
 import { runE2EFullAuditSuite } from "../lib/e2e-audit/__tests__/e2eFullWorkflow.test";
+import { runDirectorSecurityTestSuite } from "../lib/intelligence/__tests__/directorSecurity.test";
 
 async function main() {
   const p1 = runValidationSuite();
@@ -18,7 +19,8 @@ async function main() {
   const p7 = await runPaymentsTestSuite();
   const p8 = await runTasksDocumentsTestSuite();
   const p9 = await runE2EFullAuditSuite();
-  if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6 || !p7 || !p8 || !p9) {
+  const p10 = await runDirectorSecurityTestSuite();
+  if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6 || !p7 || !p8 || !p9 || !p10) {
     process.exit(1);
   }
 }
