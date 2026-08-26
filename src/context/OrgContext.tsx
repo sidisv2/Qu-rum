@@ -14,12 +14,15 @@ import {
   AIRecommendation,
   AuditLog,
   NotificationItem,
-  User
+  User,
+  Role
 } from "../types";
 import { OrganizationStore, AppState } from "../lib/db/orgStore";
+import { sanitizeCsvField, safeRound, calculateDaysDifference } from "../lib/utils/formatters";
 
 interface OrgContextType {
   currentUser: User | null;
+  currentRole: Role;
   currentOrg: Organization | null;
   organizations: Organization[];
   customers: Customer[];
@@ -39,21 +42,21 @@ interface OrgContextType {
   setCurrentOrg: (org: Organization) => void;
   createCustomer: (customer: Omit<Customer, "id" | "organizationId" | "createdAt">) => Customer;
   updateCustomer: (id: string, data: Partial<Customer>) => void;
-  deleteCustomer: (id: string) => void;
+  deleteCustomer: (id: string) => boolean;
 
   createSupplier: (supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">) => Supplier;
   updateSupplier: (id: string, data: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
+  deleteSupplier: (id: string) => boolean;
 
   createProduct: (product: Omit<Product, "id" | "organizationId" | "createdAt">) => Product;
   updateProduct: (id: string, data: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
+  deleteProduct: (id: string) => boolean;
 
   createSale: (sale: Omit<Sale, "id" | "organizationId" | "createdAt">) => Sale;
   updateSaleStatus: (id: string, status: Sale["status"]) => void;
 
   createExpense: (expense: Omit<Expense, "id" | "organizationId" | "createdAt">) => Expense;
-  deleteExpense: (id: string) => void;
+  deleteExpense: (id: string) => boolean;
 
   recordPaymentReceivable: (receivableId: string, amount: number) => void;
   recordPaymentPayable: (payableId: string, amount: number) => void;
@@ -66,7 +69,7 @@ interface OrgContextType {
   deleteTask: (id: string) => void;
 
   uploadDocument: (doc: Omit<DocumentRecord, "id" | "organizationId" | "createdAt">) => DocumentRecord;
-  deleteDocument: (id: string) => void;
+  deleteDocument: (id: string) => boolean;
 
   applyAIRecommendation: (id: string) => void;
   dismissAIRecommendation: (id: string) => void;
@@ -83,15 +86,20 @@ const OrgContext = createContext<OrgContextType | null>(null);
 
 export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppState>(() => OrganizationStore.loadState());
+  const currentRole: Role = "owner";
 
   useEffect(() => {
     OrganizationStore.saveState(state);
   }, [state]);
 
+  const hasPermission = (allowedRoles: Role[]): boolean => {
+    return allowedRoles.includes(currentRole);
+  };
+
   const addAuditLog = (action: string, entityType: string, entityId: string, details: string) => {
     if (!state.currentOrg) return;
     const newLog: AuditLog = {
-      id: "aud-" + Date.now(),
+      id: "aud-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
       organizationId: state.currentOrg.id,
       userId: state.currentUser?.id || "usr-1",
       userName: state.currentUser?.fullName || "Usuario",
@@ -113,6 +121,11 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "cust-" + Date.now(),
       organizationId: state.currentOrg.id,
+      name: sanitizeCsvField(data.name),
+      email: sanitizeCsvField(data.email),
+      phone: sanitizeCsvField(data.phone),
+      totalSpent: safeRound(data.totalSpent, 2),
+      totalPendingDebt: safeRound(data.totalPendingDebt, 2),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -124,6 +137,12 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCustomer: OrgContextType["updateCustomer"] = (id, data) => {
+    if (!state.currentOrg) return;
+    const target = state.customers.find(c => c.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) {
+      console.error("Multi-tenant security violation: attempted cross-tenant modification");
+      return;
+    }
     setState(prev => ({
       ...prev,
       customers: prev.customers.map(c => c.id === id ? { ...c, ...data } : c)
@@ -132,12 +151,29 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteCustomer: OrgContextType["deleteCustomer"] = (id) => {
+    if (!hasPermission(["owner", "admin"])) {
+      alert("No tenés permisos para eliminar clientes.");
+      return false;
+    }
+    if (!state.currentOrg) return false;
     const target = state.customers.find(c => c.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) {
+      console.error("Multi-tenant security violation: attempted cross-tenant deletion");
+      return false;
+    }
+
+    const hasDebt = state.receivables.some(r => r.customerId === id && r.status !== "paid");
+    if (hasDebt) {
+      alert("No se puede eliminar el cliente porque tiene cuentas por cobrar pendientes.");
+      return false;
+    }
+
     setState(prev => ({
       ...prev,
       customers: prev.customers.filter(c => c.id !== id)
     }));
     addAuditLog("Eliminó cliente", "Customer", id, "Cliente " + (target?.name || id) + " eliminado.");
+    return true;
   };
 
   const createSupplier: OrgContextType["createSupplier"] = (data) => {
@@ -146,6 +182,10 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "sup-" + Date.now(),
       organizationId: state.currentOrg.id,
+      name: sanitizeCsvField(data.name),
+      contactName: sanitizeCsvField(data.contactName),
+      totalPaid: safeRound(data.totalPaid, 2),
+      pendingPayment: safeRound(data.pendingPayment, 2),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -157,6 +197,9 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSupplier: OrgContextType["updateSupplier"] = (id, data) => {
+    if (!state.currentOrg) return;
+    const target = state.suppliers.find(s => s.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) return;
     setState(prev => ({
       ...prev,
       suppliers: prev.suppliers.map(s => s.id === id ? { ...s, ...data } : s)
@@ -165,11 +208,17 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteSupplier: OrgContextType["deleteSupplier"] = (id) => {
+    if (!hasPermission(["owner", "admin"])) return false;
+    if (!state.currentOrg) return false;
+    const target = state.suppliers.find(s => s.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) return false;
+
     setState(prev => ({
       ...prev,
       suppliers: prev.suppliers.filter(s => s.id !== id)
     }));
     addAuditLog("Eliminó proveedor", "Supplier", id, "Proveedor eliminado.");
+    return true;
   };
 
   const createProduct: OrgContextType["createProduct"] = (data) => {
@@ -178,6 +227,11 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "prod-" + Date.now(),
       organizationId: state.currentOrg.id,
+      name: sanitizeCsvField(data.name),
+      cost: safeRound(data.cost, 2),
+      price: safeRound(data.price, 2),
+      marginAmount: safeRound(data.marginAmount, 2),
+      marginPercent: safeRound(data.marginPercent, 1),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -189,6 +243,9 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateProduct: OrgContextType["updateProduct"] = (id, data) => {
+    if (!state.currentOrg) return;
+    const target = state.products.find(p => p.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) return;
     setState(prev => ({
       ...prev,
       products: prev.products.map(p => p.id === id ? { ...p, ...data } : p)
@@ -197,26 +254,35 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteProduct: OrgContextType["deleteProduct"] = (id) => {
+    if (!hasPermission(["owner", "admin"])) return false;
+    if (!state.currentOrg) return false;
+    const target = state.products.find(p => p.id === id);
+    if (!target || target.organizationId !== state.currentOrg.id) return false;
+
     setState(prev => ({
       ...prev,
       products: prev.products.filter(p => p.id !== id)
     }));
     addAuditLog("Eliminó producto", "Product", id, "Producto eliminado.");
+    return true;
   };
 
   const createSale: OrgContextType["createSale"] = (data) => {
     if (!state.currentOrg) throw new Error("No active org");
     const saleId = "sale-" + Date.now();
+    const cleanTotal = safeRound(data.total, 2);
     const newSale: Sale = {
       ...data,
       id: saleId,
       organizationId: state.currentOrg.id,
+      total: cleanTotal,
+      subtotal: safeRound(data.subtotal, 2),
       createdAt: new Date().toISOString()
     };
 
     let newRec: Receivable | null = null;
     if (newSale.paymentStatus !== "paid") {
-      const balance = newSale.paymentStatus === "unpaid" ? newSale.total : newSale.total * 0.5;
+      const balance = newSale.paymentStatus === "unpaid" ? cleanTotal : safeRound(cleanTotal * 0.5, 2);
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 15);
       newRec = {
@@ -226,7 +292,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customerName: newSale.customerName,
         saleId: newSale.id,
         saleNumber: newSale.saleNumber,
-        amount: newSale.total,
+        amount: cleanTotal,
         balance,
         dueDate: dueDate.toISOString().split("T")[0],
         status: "pending",
@@ -238,12 +304,12 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setState(prev => {
       const updatedCustomers = prev.customers.map(c => {
-        if (c.id === newSale.customerId) {
+        if (c.id === newSale.customerId && c.organizationId === state.currentOrg?.id) {
           return {
             ...c,
-            totalSpent: c.totalSpent + newSale.total,
+            totalSpent: safeRound(c.totalSpent + cleanTotal, 2),
             lastPurchaseDate: newSale.date,
-            totalPendingDebt: newRec ? c.totalPendingDebt + newRec.balance : c.totalPendingDebt,
+            totalPendingDebt: newRec ? safeRound(c.totalPendingDebt + newRec.balance, 2) : c.totalPendingDebt,
             status: (c.status === "inactive" || c.status === "at_risk" ? "active" : c.status) as Customer["status"]
           };
         }
@@ -258,24 +324,27 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    addAuditLog("Registró venta", "Sale", newSale.id, "Venta " + newSale.saleNumber + " por valor total de $" + newSale.total);
+    addAuditLog("Registró venta", "Sale", newSale.id, "Venta " + newSale.saleNumber + " por valor total de $" + cleanTotal);
     return newSale;
   };
 
   const updateSaleStatus: OrgContextType["updateSaleStatus"] = (id, status) => {
+    if (!state.currentOrg) return;
     setState(prev => ({
       ...prev,
-      sales: prev.sales.map(s => s.id === id ? { ...s, status } : s)
+      sales: prev.sales.map(s => (s.id === id && s.organizationId === state.currentOrg?.id) ? { ...s, status } : s)
     }));
     addAuditLog("Actualizó estado de venta", "Sale", id, "Nuevo estado: " + status);
   };
 
   const createExpense: OrgContextType["createExpense"] = (data) => {
     if (!state.currentOrg) throw new Error("No active org");
+    const cleanAmount = safeRound(data.amount, 2);
     const newExp: Expense = {
       ...data,
       id: "exp-" + Date.now(),
       organizationId: state.currentOrg.id,
+      amount: cleanAmount,
       createdAt: new Date().toISOString()
     };
 
@@ -287,8 +356,8 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supplierId: newExp.supplierId || "sup-gen",
       supplierName: newExp.supplierName || "Varios / Servicios",
       expenseId: newExp.id,
-      amount: newExp.amount,
-      balance: newExp.amount,
+      amount: cleanAmount,
+      balance: cleanAmount,
       dueDate: dueDate.toISOString().split("T")[0],
       status: "pending",
       notes: "Pago pendiente generado por gasto en " + newExp.category,
@@ -300,24 +369,30 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       expenses: [newExp, ...prev.expenses],
       payables: [newPayable, ...prev.payables]
     }));
-    addAuditLog("Registró gasto", "Expense", newExp.id, "Gasto de $" + newExp.amount + " en " + newExp.category);
+    addAuditLog("Registró gasto", "Expense", newExp.id, "Gasto de $" + cleanAmount + " en " + newExp.category);
     return newExp;
   };
 
   const deleteExpense: OrgContextType["deleteExpense"] = (id) => {
+    if (!hasPermission(["owner", "admin"])) return false;
+    if (!state.currentOrg) return false;
     setState(prev => ({
       ...prev,
-      expenses: prev.expenses.filter(e => e.id !== id)
+      expenses: prev.expenses.filter(e => !(e.id === id && e.organizationId === state.currentOrg?.id))
     }));
     addAuditLog("Eliminó gasto", "Expense", id, "Gasto eliminado");
+    return true;
   };
 
   const recordPaymentReceivable: OrgContextType["recordPaymentReceivable"] = (receivableId, amount) => {
+    if (!state.currentOrg) return;
+    const cleanAmount = safeRound(amount, 2);
+
     setState(prev => {
-      const rec = prev.receivables.find(r => r.id === receivableId);
+      const rec = prev.receivables.find(r => r.id === receivableId && r.organizationId === state.currentOrg?.id);
       if (!rec) return prev;
 
-      const newBalance = Math.max(0, rec.balance - amount);
+      const newBalance = Math.max(0, safeRound(rec.balance - cleanAmount, 2));
       const newStatus: Receivable["status"] = newBalance === 0 ? "paid" : "partial";
 
       const updatedReceivables = prev.receivables.map(r => 
@@ -325,8 +400,8 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
 
       const updatedCustomers = prev.customers.map(c => {
-        if (c.id === rec.customerId) {
-          const debt = Math.max(0, c.totalPendingDebt - amount);
+        if (c.id === rec.customerId && c.organizationId === state.currentOrg?.id) {
+          const debt = Math.max(0, safeRound(c.totalPendingDebt - cleanAmount, 2));
           return {
             ...c,
             totalPendingDebt: debt,
@@ -342,15 +417,18 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customers: updatedCustomers
       };
     });
-    addAuditLog("Registró cobro", "Receivable", receivableId, "Cobro recibido por monto $" + amount);
+    addAuditLog("Registró cobro", "Receivable", receivableId, "Cobro recibido por monto $" + cleanAmount);
   };
 
   const recordPaymentPayable: OrgContextType["recordPaymentPayable"] = (payableId, amount) => {
+    if (!state.currentOrg) return;
+    const cleanAmount = safeRound(amount, 2);
+
     setState(prev => {
-      const pay = prev.payables.find(p => p.id === payableId);
+      const pay = prev.payables.find(p => p.id === payableId && p.organizationId === state.currentOrg?.id);
       if (!pay) return prev;
 
-      const newBalance = Math.max(0, pay.balance - amount);
+      const newBalance = Math.max(0, safeRound(pay.balance - cleanAmount, 2));
       const newStatus: Payable["status"] = newBalance === 0 ? "paid" : "partial";
 
       return {
@@ -358,7 +436,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payables: prev.payables.map(p => p.id === payableId ? { ...p, balance: newBalance, status: newStatus } : p)
       };
     });
-    addAuditLog("Registró pago a proveedor", "Payable", payableId, "Pago realizado por monto $" + amount);
+    addAuditLog("Registró pago a proveedor", "Payable", payableId, "Pago realizado por monto $" + cleanAmount);
   };
 
   const createQuote: OrgContextType["createQuote"] = (data) => {
@@ -367,6 +445,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "quo-" + Date.now(),
       organizationId: state.currentOrg.id,
+      total: safeRound(data.total, 2),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -378,9 +457,10 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateQuoteStatus: OrgContextType["updateQuoteStatus"] = (id, status) => {
+    if (!state.currentOrg) return;
     setState(prev => ({
       ...prev,
-      quotes: prev.quotes.map(q => q.id === id ? { ...q, status } : q)
+      quotes: prev.quotes.map(q => (q.id === id && q.organizationId === state.currentOrg?.id) ? { ...q, status } : q)
     }));
     addAuditLog("Cambió estado de presupuesto", "Quote", id, "Nuevo estado: " + status);
   };
@@ -391,6 +471,8 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "tsk-" + Date.now(),
       organizationId: state.currentOrg.id,
+      title: sanitizeCsvField(data.title),
+      description: sanitizeCsvField(data.description),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -402,10 +484,11 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleTaskStatus: OrgContextType["toggleTaskStatus"] = (id) => {
+    if (!state.currentOrg) return;
     setState(prev => ({
       ...prev,
       tasks: prev.tasks.map(t => {
-        if (t.id === id) {
+        if (t.id === id && t.organizationId === state.currentOrg?.id) {
           const nextStatus: Task["status"] = t.status === "completed" ? "pending" : "completed";
           return { ...t, status: nextStatus };
         }
@@ -415,9 +498,10 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteTask: OrgContextType["deleteTask"] = (id) => {
+    if (!state.currentOrg) return;
     setState(prev => ({
       ...prev,
-      tasks: prev.tasks.filter(t => t.id !== id)
+      tasks: prev.tasks.filter(t => !(t.id === id && t.organizationId === state.currentOrg?.id))
     }));
     addAuditLog("Eliminó tarea", "Task", id, "Tarea eliminada.");
   };
@@ -428,6 +512,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: "doc-" + Date.now(),
       organizationId: state.currentOrg.id,
+      name: sanitizeCsvField(data.name),
       createdAt: new Date().toISOString()
     };
     setState(prev => ({
@@ -439,20 +524,24 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteDocument: OrgContextType["deleteDocument"] = (id) => {
+    if (!hasPermission(["owner", "admin"])) return false;
+    if (!state.currentOrg) return false;
     setState(prev => ({
       ...prev,
-      documents: prev.documents.filter(d => d.id !== id)
+      documents: prev.documents.filter(d => !(d.id === id && d.organizationId === state.currentOrg?.id))
     }));
     addAuditLog("Eliminó documento", "Document", id, "Documento eliminado.");
+    return true;
   };
 
   const applyAIRecommendation: OrgContextType["applyAIRecommendation"] = (id) => {
-    const rec = state.recommendations.find(r => r.id === id);
+    if (!state.currentOrg) return;
+    const rec = state.recommendations.find(r => r.id === id && r.organizationId === state.currentOrg?.id);
     if (!rec) return;
 
     const task: Task = {
       id: "tsk-" + Date.now(),
-      organizationId: state.currentOrg?.id || "org-demo-100",
+      organizationId: state.currentOrg.id,
       title: "[IA] Acción: " + rec.title,
       description: rec.recommendation,
       priority: rec.impact === "high" ? "high" : "medium",
@@ -472,9 +561,10 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const dismissAIRecommendation: OrgContextType["dismissAIRecommendation"] = (id) => {
+    if (!state.currentOrg) return;
     setState(prev => ({
       ...prev,
-      recommendations: prev.recommendations.map(r => r.id === id ? { ...r, status: "dismissed" } : r)
+      recommendations: prev.recommendations.map(r => (r.id === id && r.organizationId === state.currentOrg?.id) ? { ...r, status: "dismissed" } : r)
     }));
     addAuditLog("Descartó recomendación de IA", "AIRecommendation", id, "Recomendación descartada.");
   };
@@ -504,30 +594,36 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const mapped: Customer[] = records.map((r, i) => ({
           id: "cust-imp-" + Date.now() + "-" + i,
           organizationId: orgId,
-          name: r.name || r.Nombre || "Sin nombre",
-          email: r.email || r.Email || "",
-          phone: r.phone || r.Telefono || "",
+          name: sanitizeCsvField(r.name || r.Nombre || "Sin nombre"),
+          email: sanitizeCsvField(r.email || r.Email || ""),
+          phone: sanitizeCsvField(r.phone || r.Telefono || ""),
           status: "active",
-          totalSpent: Number(r.totalSpent || 0),
-          totalPendingDebt: Number(r.totalPendingDebt || 0),
+          totalSpent: safeRound(Number(r.totalSpent || 0), 2),
+          totalPendingDebt: safeRound(Number(r.totalPendingDebt || 0), 2),
           createdAt: new Date().toISOString()
         }));
         copy.customers = [...mapped, ...copy.customers];
         count = mapped.length;
       } else if (entity === "products") {
-        const mapped: Product[] = records.map((r, i) => ({
-          id: "prod-imp-" + Date.now() + "-" + i,
-          organizationId: orgId,
-          name: r.name || r.Nombre || "Producto importado",
-          sku: r.sku || r.Codigo || ("SKU-" + Date.now() + "-" + i),
-          category: r.category || r.Categoria || "General",
-          cost: Number(r.cost || r.Costo || 0),
-          price: Number(r.price || r.Precio || 0),
-          marginAmount: Number(r.price || 0) - Number(r.cost || 0),
-          marginPercent: Number(r.price) > 0 ? ((Number(r.price) - Number(r.cost)) / Number(r.price)) * 100 : 0,
-          status: "active",
-          createdAt: new Date().toISOString()
-        }));
+        const mapped: Product[] = records.map((r, i) => {
+          const pPrice = safeRound(Number(r.price || r.Precio || 0), 2);
+          const pCost = safeRound(Number(r.cost || r.Costo || 0), 2);
+          const marginAmount = safeRound(pPrice - pCost, 2);
+          const marginPercent = pPrice > 0 ? safeRound(((pPrice - pCost) / pPrice) * 100, 1) : 0;
+          return {
+            id: "prod-imp-" + Date.now() + "-" + i,
+            organizationId: orgId,
+            name: sanitizeCsvField(r.name || r.Nombre || "Producto importado"),
+            sku: sanitizeCsvField(r.sku || r.Codigo || ("SKU-" + Date.now() + "-" + i)),
+            category: sanitizeCsvField(r.category || r.Categoria || "General"),
+            cost: pCost,
+            price: pPrice,
+            marginAmount,
+            marginPercent,
+            status: "active",
+            createdAt: new Date().toISOString()
+          };
+        });
         copy.products = [...mapped, ...copy.products];
         count = mapped.length;
       }
@@ -546,19 +642,19 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createNewOrganization = (name: string, taxId: string, industry: string) => {
     const newOrg: Organization = {
       id: "org-" + Date.now(),
-      name,
-      taxId,
+      name: sanitizeCsvField(name),
+      taxId: sanitizeCsvField(taxId),
       currency: "ARS",
       currencySymbol: "$",
-      industry,
+      industry: sanitizeCsvField(industry),
       isDemo: false,
       createdAt: new Date().toISOString()
     };
 
-    setState(prev => ({
-      ...prev,
+    const emptyOrgState: AppState = {
+      currentUser: state.currentUser,
       currentOrg: newOrg,
-      organizations: [newOrg, ...prev.organizations],
+      organizations: [newOrg, ...state.organizations],
       customers: [],
       suppliers: [],
       products: [],
@@ -573,38 +669,45 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       auditLogs: [{
         id: "aud-" + Date.now(),
         organizationId: newOrg.id,
-        userId: prev.currentUser?.id || "usr-1",
-        userName: prev.currentUser?.fullName || "Usuario",
+        userId: state.currentUser?.id || "usr-1",
+        userName: state.currentUser?.fullName || "Usuario",
         action: "Creó organización",
         entityType: "Organization",
         entityId: newOrg.id,
         details: "Organización " + newOrg.name + " creada exitosamente.",
         timestamp: new Date().toISOString()
-      }]
-    }));
+      }],
+      notifications: []
+    };
 
+    OrganizationStore.saveState(emptyOrgState);
+    setState(emptyOrgState);
     return newOrg;
   };
 
   return (
     <OrgContext.Provider value={{
       currentUser: state.currentUser,
+      currentRole,
       currentOrg: state.currentOrg,
       organizations: state.organizations,
-      customers: state.customers,
-      suppliers: state.suppliers,
-      products: state.products,
-      sales: state.sales,
-      expenses: state.expenses,
-      receivables: state.receivables,
-      payables: state.payables,
-      quotes: state.quotes,
-      tasks: state.tasks,
-      documents: state.documents,
-      recommendations: state.recommendations,
-      auditLogs: state.auditLogs,
-      notifications: state.notifications,
-      setCurrentOrg: (org) => setState(prev => ({ ...prev, currentOrg: org })),
+      customers: state.customers.filter(c => c.organizationId === state.currentOrg?.id),
+      suppliers: state.suppliers.filter(s => s.organizationId === state.currentOrg?.id),
+      products: state.products.filter(p => p.organizationId === state.currentOrg?.id),
+      sales: state.sales.filter(s => s.organizationId === state.currentOrg?.id),
+      expenses: state.expenses.filter(e => e.organizationId === state.currentOrg?.id),
+      receivables: state.receivables.filter(r => r.organizationId === state.currentOrg?.id),
+      payables: state.payables.filter(p => p.organizationId === state.currentOrg?.id),
+      quotes: state.quotes.filter(q => q.organizationId === state.currentOrg?.id),
+      tasks: state.tasks.filter(t => t.organizationId === state.currentOrg?.id),
+      documents: state.documents.filter(d => d.organizationId === state.currentOrg?.id),
+      recommendations: state.recommendations.filter(r => r.organizationId === state.currentOrg?.id),
+      auditLogs: state.auditLogs.filter(a => a.organizationId === state.currentOrg?.id),
+      notifications: state.notifications.filter(n => n.organizationId === state.currentOrg?.id),
+      setCurrentOrg: (org) => {
+        const loaded = OrganizationStore.loadOrgState(org.id);
+        setState(loaded);
+      },
       createCustomer,
       updateCustomer,
       deleteCustomer,

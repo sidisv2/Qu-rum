@@ -17,7 +17,7 @@
 } from "../../types";
 import { getInitialDemoState } from "../demo/initialData";
 
-const STORAGE_PREFIX = "quorum_store_v1_";
+const STORAGE_PREFIX = "direx_store_v1_";
 
 export interface AppState {
   currentUser: User | null;
@@ -41,7 +41,7 @@ export interface AppState {
 export class OrganizationStore {
   private static defaultUser: User = {
     id: "usr-1",
-    email: "valentin@quorum.app",
+    email: "valentin@direx.app",
     fullName: "Valentín Morales",
     avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
     createdAt: "2026-01-01T00:00:00.000Z"
@@ -49,6 +49,10 @@ export class OrganizationStore {
 
   public static loadState(): AppState {
     const orgId = localStorage.getItem(STORAGE_PREFIX + "current_org_id") || "org-demo-100";
+    return this.loadOrgState(orgId);
+  }
+
+  public static loadOrgState(orgId: string): AppState {
     const raw = localStorage.getItem(STORAGE_PREFIX + orgId);
 
     if (raw) {
@@ -116,6 +120,6 @@ export class OrganizationStore {
 
   public static resetToDemo(orgId: string = "org-demo-100"): AppState {
     localStorage.removeItem(STORAGE_PREFIX + orgId);
-    return this.loadState();
+    return this.loadOrgState(orgId);
   }
 }
