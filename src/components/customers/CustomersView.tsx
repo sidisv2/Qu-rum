@@ -1,7 +1,21 @@
 ﻿import React, { useState } from "react";
-import { Plus, Search, Eye, Phone, Mail, MapPin, Calendar, DollarSign, AlertCircle } from "lucide-react";
+import {
+  Users,
+  Search,
+  Plus,
+  ArrowUpDown,
+  Phone,
+  Mail,
+  Building,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ChevronRight,
+  TrendingUp,
+  FileText
+} from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
-import { Customer, CustomerStatus } from "../../types";
+import { Customer } from "../../types";
 import { formatCurrency, formatDate } from "../../lib/utils/formatters";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
@@ -9,176 +23,165 @@ import { Drawer } from "../ui/Drawer";
 import { useToast } from "../ui/Toast";
 
 export const CustomersView: React.FC = () => {
-  const { customers, createCustomer, deleteCustomer, currentOrg } = useOrg();
+  const { customers, createCustomer, updateCustomer, deleteCustomer, hasPermission } = useOrg();
   const { showToast } = useToast();
-  const [search, setSearch] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    taxId: "",
-    address: "",
-    status: "active" as CustomerStatus,
-    notes: "",
-    totalSpent: 0,
-    totalPendingDebt: 0
-  });
+  // Form State
+  const [name, setName] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
 
   const filteredCustomers = customers.filter(c => {
-    const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.email.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search);
+    const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                          (c.taxId && c.taxId.includes(searchTerm));
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
-    createCustomer({
-      ...formData,
-      totalSpent: Number(formData.totalSpent) || 0,
-      totalPendingDebt: Number(formData.totalPendingDebt) || 0
-    });
-    setIsCreateOpen(false);
-    showToast("Cliente registrado correctamente");
-    setFormData({
-      name: "",
-      email: "",
-      phone: "",
-      taxId: "",
-      address: "",
+    if (!name.trim()) return;
+
+    await createCustomer({
+      name: name.trim(),
+      taxId: taxId.trim() || undefined,
+      email: email.trim() || "",
+      phone: phone.trim() || "",
+      address: address.trim() || undefined,
+      notes: notes.trim() || undefined,
       status: "active",
-      notes: "",
       totalSpent: 0,
       totalPendingDebt: 0
     });
+
+    setName("");
+    setTaxId("");
+    setEmail("");
+    setPhone("");
+    setAddress("");
+    setNotes("");
+    setIsNewModalOpen(false);
+    showToast("Cliente registrado exitosamente");
   };
 
-  const getStatusBadge = (status: CustomerStatus) => {
+  const getStatusBadge = (status: Customer["status"]) => {
     switch (status) {
-      case "active": return <span className="badge badge-success">Activo</span>;
-      case "at_risk": return <span className="badge badge-warning">En riesgo</span>;
-      case "overdue": return <span className="badge badge-danger">Moroso</span>;
-      case "inactive": return <span className="badge badge-neutral">Inactivo</span>;
+      case "active":
+        return <span className="badge badge-success">Activo</span>;
+      case "at_risk":
+        return <span className="badge badge-warning">En Riesgo</span>;
+      case "overdue":
+        return <span className="badge badge-danger">En Mora</span>;
+      case "inactive":
+        return <span className="badge badge-neutral">Inactivo</span>;
+      default:
+        return <span className="badge badge-neutral">{status}</span>;
     }
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", maxWidth: "1200px", margin: "0 auto" }}>
-      {/* 1. Encabezado */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>
-            Clientes
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Users size={22} style={{ color: "var(--color-accent)" }} />
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>
+              Clientes ({customers.length})
+            </h1>
+          </div>
           <p style={{ fontSize: "0.875rem", color: "var(--color-text-secondary)", marginTop: "0.2rem" }}>
-            Base de cuentas comerciales, historial de compra y estado de deuda.
+            Gestión comercial, frecuencia de compra y estado crediticio
           </p>
         </div>
 
         <Button
           variant="primary"
           icon={<Plus size={16} />}
-          onClick={() => setIsCreateOpen(true)}
+          onClick={() => setIsNewModalOpen(true)}
         >
           Nuevo Cliente
         </Button>
       </div>
 
-      {/* 2. Barra de Búsqueda y Filtros Rápidos */}
-      <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1, minWidth: "240px", backgroundColor: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", padding: "0.45rem 0.75rem", borderRadius: "var(--radius-md)" }}>
-          <Search size={15} style={{ color: "var(--color-text-muted)" }} />
+      {/* Filtros y Búsqueda */}
+      <div className="card" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center", padding: "0.875rem 1.25rem" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: "240px" }}>
+          <Search size={16} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "var(--color-text-muted)" }} />
           <input
             type="text"
-            placeholder="Buscar por nombre, email, CUIT o teléfono..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ border: "none", background: "transparent", outline: "none", width: "100%", fontSize: "0.8125rem" }}
+            placeholder="Buscar por nombre, email o CUIT..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ width: "100%", padding: "0.45rem 0.75rem 0.45rem 2.2rem", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-default)", fontSize: "0.875rem" }}
           />
         </div>
 
-        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-          {(["all", "active", "at_risk", "overdue"] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{
-                border: "1px solid",
-                borderColor: statusFilter === s ? "var(--color-primary)" : "var(--color-border-default)",
-                backgroundColor: statusFilter === s ? "var(--color-primary-light)" : "#ffffff",
-                color: statusFilter === s ? "var(--color-primary-text)" : "var(--color-text-secondary)",
-                fontWeight: statusFilter === s ? 700 : 500,
-                fontSize: "0.75rem",
-                padding: "0.35rem 0.75rem",
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer"
-              }}
-            >
-              {s === "all" ? "Todos (" + customers.length + ")" : s === "active" ? "Activos" : s === "at_risk" ? "En riesgo" : "Morosos"}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)", fontWeight: 600 }}>Estado:</span>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "0.45rem 0.75rem", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-default)", fontSize: "0.8125rem" }}
+          >
+            <option value="all">Todos los estados</option>
+            <option value="active">Activos</option>
+            <option value="at_risk">En Riesgo</option>
+            <option value="overdue">En Mora</option>
+            <option value="inactive">Inactivos</option>
+          </select>
         </div>
       </div>
 
-      {/* 3. Tabla Adaptativa de Clientes */}
+      {/* Tabla de Clientes */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+        <table className="table">
           <thead>
-            <tr style={{ backgroundColor: "var(--color-bg-base)", borderBottom: "1px solid var(--color-border-subtle)", fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--color-text-muted)" }}>
-              <th style={{ padding: "0.75rem 1rem" }}>Cliente / Razón Social</th>
-              <th style={{ padding: "0.75rem 1rem" }}>Estado</th>
-              <th style={{ padding: "0.75rem 1rem" }}>Contacto</th>
-              <th style={{ padding: "0.75rem 1rem", textAlign: "right" }}>Facturado Total</th>
-              <th style={{ padding: "0.75rem 1rem", textAlign: "right" }}>Saldo Deudor</th>
-              <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>Acción</th>
+            <tr>
+              <th>Cliente</th>
+              <th>Contacto</th>
+              <th>Estado</th>
+              <th style={{ textAlign: "right" }}>Facturado Total</th>
+              <th style={{ textAlign: "right" }}>Saldo Deudor</th>
+              <th style={{ textAlign: "center" }}>Acción</th>
             </tr>
           </thead>
           <tbody>
             {filteredCustomers.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: "3rem 1rem", textAlign: "center" }}>
-                  <div style={{ color: "var(--color-text-muted)", fontSize: "0.875rem", fontWeight: 600 }}>
-                    No se encontraron clientes con el filtro seleccionado.
-                  </div>
+                <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-muted)" }}>
+                  No se encontraron clientes que coincidan con la búsqueda.
                 </td>
               </tr>
             ) : (
-              filteredCustomers.map(cust => (
-                <tr
-                  key={cust.id}
-                  style={{ borderBottom: "1px solid var(--color-border-subtle)", cursor: "pointer", transition: "background-color 0.12s ease" }}
-                  onClick={() => setSelectedCustomer(cust)}
-                >
-                  <td style={{ padding: "0.75rem 1rem" }}>
-                    <div style={{ fontWeight: 700, color: "var(--color-text-primary)", fontSize: "0.875rem" }}>{cust.name}</div>
-                    {cust.taxId && <div style={{ fontSize: "0.6875rem", color: "var(--color-text-muted)" }}>CUIT: {cust.taxId}</div>}
+              filteredCustomers.map(c => (
+                <tr key={c.id} onClick={() => setSelectedCustomer(c)} style={{ cursor: "pointer" }}>
+                  <td>
+                    <div style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{c.name}</div>
+                    {c.taxId && <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>CUIT: {c.taxId}</div>}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{getStatusBadge(cust.status)}</td>
-                  <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-text-secondary)" }}>
-                    <div>{cust.email || "-"}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>{cust.phone || "-"}</div>
+                  <td>
+                    <div style={{ fontSize: "0.8125rem" }}>{c.email || "-"}</div>
+                    {c.phone && <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>{c.phone}</div>}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 700 }} className="tabular-nums">
-                    {formatCurrency(cust.totalSpent, currentOrg?.currency, currentOrg?.currencySymbol)}
+                  <td>{getStatusBadge(c.status)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }} className="tabular-nums">
+                    {formatCurrency(c.totalSpent)}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 700, color: cust.totalPendingDebt > 0 ? "var(--color-danger-text)" : "var(--color-text-secondary)" }} className="tabular-nums">
-                    {formatCurrency(cust.totalPendingDebt, currentOrg?.currency, currentOrg?.currencySymbol)}
+                  <td style={{ textAlign: "right", fontWeight: 700, color: c.totalPendingDebt > 0 ? "var(--color-danger-text)" : "var(--color-text-muted)" }} className="tabular-nums">
+                    {formatCurrency(c.totalPendingDebt)}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem", textAlign: "center" }} onClick={e => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedCustomer(cust)}
-                      icon={<Eye size={14} />}
-                    >
-                      Ver Ficha
-                    </Button>
+                  <td style={{ textAlign: "center" }}>
+                    <Button variant="ghost" size="sm">Ver ficha →</Button>
                   </td>
                 </tr>
               ))
@@ -187,7 +190,7 @@ export const CustomersView: React.FC = () => {
         </table>
       </div>
 
-      {/* 4. Slide-over Drawer para Ficha Lateral Rápida */}
+      {/* Drawer de Detalle del Cliente */}
       {selectedCustomer && (
         <Drawer
           isOpen={true}
@@ -199,12 +202,10 @@ export const CustomersView: React.FC = () => {
               <Button
                 variant="danger"
                 size="sm"
-                onClick={() => {
-                  const ok = deleteCustomer(selectedCustomer.id);
-                  if (ok) {
-                    setSelectedCustomer(null);
-                    showToast("Cliente eliminado.");
-                  }
+                onClick={async () => {
+                  await deleteCustomer(selectedCustomer.id);
+                  setSelectedCustomer(null);
+                  showToast("Cliente eliminado.");
                 }}
               >
                 Eliminar Cliente
@@ -216,107 +217,90 @@ export const CustomersView: React.FC = () => {
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            {/* Estado de Cuenta */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", backgroundColor: "var(--color-bg-base)", padding: "1rem", borderRadius: "var(--radius-md)" }}>
-              <div>
-                <div style={{ fontSize: "0.6875rem", fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase" }}>TOTAL COMPRADO</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-text-primary)", marginTop: "0.2rem" }} className="tabular-nums">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div className="card" style={{ backgroundColor: "var(--color-bg-base)" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>COMPRAS TOTALES</div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-primary)" }} className="tabular-nums">
                   {formatCurrency(selectedCustomer.totalSpent)}
                 </div>
               </div>
-
-              <div>
-                <div style={{ fontSize: "0.6875rem", fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase" }}>SALDO DEUDOR</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: selectedCustomer.totalPendingDebt > 0 ? "var(--color-danger-text)" : "var(--color-success-text)", marginTop: "0.2rem" }} className="tabular-nums">
+              <div className="card" style={{ backgroundColor: "var(--color-bg-base)" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>DEUDA PENDIENTE</div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: selectedCustomer.totalPendingDebt > 0 ? "var(--color-danger-text)" : "var(--color-success-text)" }} className="tabular-nums">
                   {formatCurrency(selectedCustomer.totalPendingDebt)}
                 </div>
               </div>
             </div>
 
-            {/* Datos de Contacto */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.875rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-secondary)" }}>
-                <Mail size={15} style={{ color: "var(--color-text-muted)" }} />
-                <span>{selectedCustomer.email || "Sin email"}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-secondary)" }}>
-                <Phone size={15} style={{ color: "var(--color-text-muted)" }} />
-                <span>{selectedCustomer.phone || "Sin teléfono"}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-secondary)" }}>
-                <MapPin size={15} style={{ color: "var(--color-text-muted)" }} />
-                <span>{selectedCustomer.address || "Sin dirección"}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-secondary)" }}>
-                <Calendar size={15} style={{ color: "var(--color-text-muted)" }} />
-                <span>Frecuencia de compra habitual: cada {selectedCustomer.purchaseFrequencyDays || 30} días</span>
+            <div>
+              <h4 style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "0.5rem" }}>Datos de Contacto</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8125rem" }}>
+                <div><strong>Email:</strong> {selectedCustomer.email || "No registrado"}</div>
+                <div><strong>Teléfono:</strong> {selectedCustomer.phone || "No registrado"}</div>
+                <div><strong>Dirección:</strong> {selectedCustomer.address || "No registrada"}</div>
+                <div><strong>Identificación Fiscal:</strong> {selectedCustomer.taxId || "Sin CUIT"}</div>
               </div>
             </div>
-
-            {selectedCustomer.notes && (
-              <div style={{ backgroundColor: "var(--color-bg-base)", padding: "0.75rem", borderRadius: "var(--radius-md)" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)", marginBottom: "0.25rem" }}>NOTAS COMERCIALES:</div>
-                <div style={{ fontSize: "0.8125rem", color: "var(--color-text-secondary)" }}>{selectedCustomer.notes}</div>
-              </div>
-            )}
           </div>
         </Drawer>
       )}
 
-      {/* 5. Modal de Creación */}
-      {isCreateOpen && (
+      {/* Modal Nuevo Cliente */}
+      {isNewModalOpen && (
         <Modal
           isOpen={true}
-          onClose={() => setIsCreateOpen(false)}
-          title="Nuevo Cliente"
-          subtitle="Registrar cuenta comercial en el sistema"
+          onClose={() => setIsNewModalOpen(false)}
+          title="Registrar Nuevo Cliente"
+          subtitle="Añadí una cuenta comercial a tu empresa"
           footer={
             <>
-              <Button variant="secondary" size="sm" onClick={() => setIsCreateOpen(false)}>
+              <Button variant="secondary" size="sm" onClick={() => setIsNewModalOpen(false)}>
                 Cancelar
               </Button>
-              <Button variant="primary" size="sm" onClick={handleCreateSubmit}>
+              <Button variant="primary" size="sm" onClick={handleCreateCustomer} disabled={!name.trim()}>
                 Guardar Cliente
               </Button>
             </>
           }
         >
-          <form onSubmit={handleCreateSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <form onSubmit={handleCreateCustomer} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <div>
               <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-secondary)", display: "block", marginBottom: "0.25rem" }}>
-                Nombre / Razón Social *
+                Razón Social / Nombre *
               </label>
               <input
                 type="text"
-                required
                 autoFocus
-                value={formData.name}
-                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                required
+                placeholder="Ej: Ferretería Central S.R.L."
+                value={name}
+                onChange={e => setName(e.target.value)}
                 style={{ width: "100%", padding: "0.5rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
               <div>
                 <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-secondary)", display: "block", marginBottom: "0.25rem" }}>
-                  Email
+                  CUIT / Tax ID
                 </label>
                 <input
-                  type="email"
-                  value={formData.email}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  type="text"
+                  placeholder="30-71888999-4"
+                  value={taxId}
+                  onChange={e => setTaxId(e.target.value)}
                   style={{ width: "100%", padding: "0.5rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}
                 />
               </div>
-
               <div>
                 <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-secondary)", display: "block", marginBottom: "0.25rem" }}>
                   Teléfono
                 </label>
                 <input
                   type="text"
-                  value={formData.phone}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="11-4455-6677"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
                   style={{ width: "100%", padding: "0.5rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}
                 />
               </div>
@@ -324,12 +308,14 @@ export const CustomersView: React.FC = () => {
 
             <div>
               <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-secondary)", display: "block", marginBottom: "0.25rem" }}>
-                Notas comerciales
+                Email
               </label>
-              <textarea
-                value={formData.notes}
-                onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                style={{ width: "100%", padding: "0.5rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", minHeight: "60px" }}
+              <input
+                type="email"
+                placeholder="contacto@ferreteriacentral.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                style={{ width: "100%", padding: "0.5rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}
               />
             </div>
           </form>

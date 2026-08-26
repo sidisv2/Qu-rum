@@ -1,4 +1,4 @@
-﻿import { IDataRepository } from "./types";
+﻿import { IDataRepository, PaginatedResult, PaginationParams } from "./types";
 import { OrganizationStore, AppState } from "../db/orgStore";
 import {
   Organization,
@@ -52,8 +52,22 @@ export class LocalRepository implements IDataRepository {
     return newOrg;
   }
 
-  async getCustomers(orgId: string): Promise<Customer[]> {
-    return this.getState(orgId).customers.filter(c => c.organizationId === orgId);
+  async getCustomers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Customer>> {
+    let items = this.getState(orgId).customers.filter(c => c.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(c => c.name.toLowerCase().includes(q) || (c.email && c.email.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getCustomerById(orgId: string, id: string): Promise<Customer | null> {
+    const cust = this.getState(orgId).customers.find(c => c.id === id && c.organizationId === orgId);
+    return cust || null;
   }
 
   async createCustomer(orgId: string, customer: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<Customer> {
@@ -95,8 +109,22 @@ export class LocalRepository implements IDataRepository {
     return st.customers.length < initialLen;
   }
 
-  async getSuppliers(orgId: string): Promise<Supplier[]> {
-    return this.getState(orgId).suppliers.filter(s => s.organizationId === orgId);
+  async getSuppliers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Supplier>> {
+    let items = this.getState(orgId).suppliers.filter(s => s.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(s => s.name.toLowerCase().includes(q) || (s.email && s.email.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getSupplierById(orgId: string, id: string): Promise<Supplier | null> {
+    const s = this.getState(orgId).suppliers.find(x => x.id === id && x.organizationId === orgId);
+    return s || null;
   }
 
   async createSupplier(orgId: string, supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">): Promise<Supplier> {
@@ -135,8 +163,22 @@ export class LocalRepository implements IDataRepository {
     return true;
   }
 
-  async getProducts(orgId: string): Promise<Product[]> {
-    return this.getState(orgId).products.filter(p => p.organizationId === orgId);
+  async getProducts(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Product>> {
+    let items = this.getState(orgId).products.filter(p => p.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(p => p.name.toLowerCase().includes(q) || (p.sku && p.sku.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const total = items.length;
+    const data = items.slice((page - 1) * pageSize, page * pageSize);
+    return { data, total, page, pageSize };
+  }
+
+  async getProductById(orgId: string, id: string): Promise<Product | null> {
+    const p = this.getState(orgId).products.find(x => x.id === id && x.organizationId === orgId);
+    return p || null;
   }
 
   async createProduct(orgId: string, product: Omit<Product, "id" | "organizationId" | "createdAt">): Promise<Product> {

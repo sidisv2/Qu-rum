@@ -1,4 +1,4 @@
-﻿import { IDataRepository } from "./types";
+﻿import { IDataRepository, PaginatedResult, PaginationParams } from "./types";
 import { supabase, isSupabaseConfigured } from "../supabase/client";
 import {
   Organization,
@@ -78,11 +78,25 @@ export class SupabaseRepository implements IDataRepository {
     };
   }
 
-  async getCustomers(orgId: string): Promise<Customer[]> {
+  async getCustomers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Customer>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("customers").select("*").eq("organization_id", orgId).is("deleted_at", null);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("customers").select("*", { count: "exact" }).eq("organization_id", orgId).is("deleted_at", null);
+
+    if (params?.search) {
+      query = query.or(`name.ilike.%${params.search}%,email.ilike.%${params.search}%`);
+    }
+
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((c: any) => ({
+
+    const mapped = (data || []).map((c: any) => ({
       id: c.id,
       organizationId: c.organization_id,
       name: c.name,
@@ -98,6 +112,35 @@ export class SupabaseRepository implements IDataRepository {
       notes: c.notes,
       createdAt: c.created_at
     }));
+
+    return {
+      data: mapped,
+      total: count || 0,
+      page,
+      pageSize
+    };
+  }
+
+  async getCustomerById(orgId: string, id: string): Promise<Customer | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("customers").select("*").eq("id", id).eq("organization_id", orgId).is("deleted_at", null).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      name: data.name,
+      email: data.email || "",
+      phone: data.phone || "",
+      taxId: data.tax_id,
+      address: data.address,
+      status: data.status,
+      totalSpent: Number(data.total_spent) || 0,
+      totalPendingDebt: Number(data.total_pending_debt) || 0,
+      purchaseFrequencyDays: data.purchase_frequency_days,
+      lastPurchaseDate: data.last_purchase_date,
+      notes: data.notes,
+      createdAt: data.created_at
+    };
   }
 
   async createCustomer(orgId: string, customer: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<Customer> {
@@ -170,11 +213,25 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
-  async getSuppliers(orgId: string): Promise<Supplier[]> {
+  async getSuppliers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Supplier>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("suppliers").select("*").eq("organization_id", orgId).is("deleted_at", null);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("suppliers").select("*", { count: "exact" }).eq("organization_id", orgId).is("deleted_at", null);
+
+    if (params?.search) {
+      query = query.or(`name.ilike.%${params.search}%,contact_name.ilike.%${params.search}%`);
+    }
+
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((s: any) => ({
+
+    const mapped = (data || []).map((s: any) => ({
       id: s.id,
       organizationId: s.organization_id,
       name: s.name,
@@ -186,6 +243,31 @@ export class SupabaseRepository implements IDataRepository {
       pendingPayment: Number(s.pending_payment) || 0,
       createdAt: s.created_at
     }));
+
+    return {
+      data: mapped,
+      total: count || 0,
+      page,
+      pageSize
+    };
+  }
+
+  async getSupplierById(orgId: string, id: string): Promise<Supplier | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("suppliers").select("*").eq("id", id).eq("organization_id", orgId).is("deleted_at", null).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      name: data.name,
+      contactName: data.contact_name,
+      category: data.category || "General",
+      email: data.email,
+      phone: data.phone,
+      totalPaid: Number(data.total_paid) || 0,
+      pendingPayment: Number(data.pending_payment) || 0,
+      createdAt: data.created_at
+    };
   }
 
   async createSupplier(orgId: string, supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">): Promise<Supplier> {
@@ -227,11 +309,25 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
-  async getProducts(orgId: string): Promise<Product[]> {
+  async getProducts(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Product>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("products").select("*").eq("organization_id", orgId);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase!.from("products").select("*", { count: "exact" }).eq("organization_id", orgId);
+
+    if (params?.search) {
+      query = query.or(`name.ilike.%${params.search}%,sku.ilike.%${params.search}%`);
+    }
+
+    query = query.order("created_at", { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((p: any) => ({
+
+    const mapped: Product[] = (data || []).map((p: any) => ({
       id: p.id,
       organizationId: p.organization_id,
       name: p.name,
@@ -245,6 +341,33 @@ export class SupabaseRepository implements IDataRepository {
       status: p.active ? "active" : "archived",
       createdAt: p.created_at
     }));
+
+    return {
+      data: mapped,
+      total: count || 0,
+      page,
+      pageSize
+    };
+  }
+
+  async getProductById(orgId: string, id: string): Promise<Product | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("products").select("*").eq("id", id).eq("organization_id", orgId).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      name: data.name,
+      sku: data.sku || "",
+      category: data.category,
+      cost: Number(data.cost) || 0,
+      price: Number(data.price) || 0,
+      marginAmount: Number(data.margin_amount) || 0,
+      marginPercent: Number(data.margin_percent) || 0,
+      stock: data.stock || 0,
+      status: data.active ? "active" : "archived",
+      createdAt: data.created_at
+    };
   }
 
   async createProduct(orgId: string, product: Omit<Product, "id" | "organizationId" | "createdAt">): Promise<Product> {
@@ -648,7 +771,7 @@ export class SupabaseRepository implements IDataRepository {
       user_name: log.userName || "Usuario",
       action: log.action,
       entity_type: log.entityType,
-      entity_id: log.entityId,
+      entityId: log.entityId,
       details: log.details
     }).select().single();
     if (error) throw error;
