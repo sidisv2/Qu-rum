@@ -1,5 +1,5 @@
 ﻿-- DIREX SAAS B2B — ESQUEMA RELACIONAL POSTGRESQL & ROW LEVEL SECURITY (RLS)
--- Migración Inicial Idempotente
+-- Migracion Inicial Idempotente y Adaptable
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -18,11 +18,42 @@ CREATE TABLE IF NOT EXISTS public.organizations (
     province VARCHAR(100),
     country VARCHAR(2) NOT NULL DEFAULT 'AR',
     currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+    currency_symbol VARCHAR(5) DEFAULT '$',
+    industry VARCHAR(100),
     timezone VARCHAR(50) NOT NULL DEFAULT 'America/Argentina/Buenos_Aires',
     is_demo BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+-- Migracion adaptativa si la tabla organizations ya existia previamente
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'legal_name') THEN
+        ALTER TABLE public.organizations ADD COLUMN legal_name VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'tax_id') THEN
+        ALTER TABLE public.organizations ADD COLUMN tax_id VARCHAR(50);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'currency') THEN
+        ALTER TABLE public.organizations ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'ARS';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'currency_symbol') THEN
+        ALTER TABLE public.organizations ADD COLUMN currency_symbol VARCHAR(5) DEFAULT '$';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'industry') THEN
+        ALTER TABLE public.organizations ADD COLUMN industry VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'country') THEN
+        ALTER TABLE public.organizations ADD COLUMN country VARCHAR(2) NOT NULL DEFAULT 'AR';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'timezone') THEN
+        ALTER TABLE public.organizations ADD COLUMN timezone VARCHAR(50) NOT NULL DEFAULT 'America/Argentina/Buenos_Aires';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'is_demo') THEN
+        ALTER TABLE public.organizations ADD COLUMN is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- 2. TABLA: ORGANIZATION_MEMBERS (RBAC)
@@ -31,60 +62,49 @@ CREATE TABLE IF NOT EXISTS public.organization_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     user_id UUID NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    CONSTRAINT uq_org_user UNIQUE (organization_id, user_id)
+    UNIQUE(organization_id, user_id)
 );
 
--- ============================================================================
--- 3. FUNCIONES DE SEGURIDAD RLS
--- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON public.organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON public.organization_members(organization_id);
+
+-- Helper para validacion de membresia en RLS
 CREATE OR REPLACE FUNCTION public.is_org_member(org_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
     RETURN EXISTS (
         SELECT 1 FROM public.organization_members
-        WHERE organization_id = org_id AND user_id = auth.uid()
+        WHERE organization_id = org_id
+        AND user_id = auth.uid()
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.is_org_admin(org_id UUID)
-RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (
-        SELECT 1 FROM public.organization_members
-        WHERE organization_id = org_id AND user_id = auth.uid() AND role IN ('owner', 'admin')
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- 4. TABLA: CUSTOMERS
+-- 3. TABLAS MAESTRAS (CUSTOMERS, SUPPLIERS, PRODUCTS)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
+    business_name VARCHAR(255),
     tax_id VARCHAR(50),
     email VARCHAR(255),
     phone VARCHAR(50),
     address TEXT,
     notes TEXT,
-    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'at_risk', 'overdue')),
-    total_spent NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (total_spent >= 0),
-    total_pending_debt NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (total_pending_debt >= 0),
-    purchase_frequency_days INT NOT NULL DEFAULT 30,
-    last_purchase_date DATE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    total_sales_amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    total_pending_debt NUMERIC(15,2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     deleted_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_customers_org ON public.customers(organization_id);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON public.customers(organization_id, name);
 
--- ============================================================================
--- 5. TABLA: SUPPLIERS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.suppliers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -93,249 +113,224 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
     contact_name VARCHAR(255),
     email VARCHAR(255),
     phone VARCHAR(50),
-    address TEXT,
+    category VARCHAR(100),
     notes TEXT,
-    total_paid NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (total_paid >= 0),
-    pending_payment NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (pending_payment >= 0),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    total_purchases_amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    total_pending_payable NUMERIC(15,2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     deleted_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_suppliers_org ON public.suppliers(organization_id);
 
--- ============================================================================
--- 6. TABLA: PRODUCTS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    description TEXT,
     sku VARCHAR(100),
-    category VARCHAR(100) NOT NULL DEFAULT 'General',
-    price NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (price >= 0),
-    cost NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (cost >= 0),
-    margin_amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
-    margin_percent NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-    stock INT DEFAULT 0,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
+    category VARCHAR(100),
+    cost_price NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    sale_price NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    current_stock NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    min_stock NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    unit VARCHAR(20) NOT NULL DEFAULT 'u',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    deleted_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_products_org ON public.products(organization_id);
 
 -- ============================================================================
--- 7. TABLA: SALES
+-- 4. TABLAS FINANCIERAS (SALES, SALE_ITEMS, EXPENSES)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255) NOT NULL,
-    sale_number VARCHAR(50) NOT NULL,
-    sale_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    subtotal NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0),
-    discount NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (discount >= 0),
-    tax NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (tax >= 0),
-    total NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (total >= 0),
-    paid_amount NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (paid_amount >= 0),
-    status VARCHAR(20) NOT NULL DEFAULT 'confirmed' CHECK (status IN ('draft', 'confirmed', 'completed', 'cancelled')),
-    payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('paid', 'partial', 'unpaid')),
+    sale_number VARCHAR(100) NOT NULL,
+    date DATE NOT NULL,
+    subtotal NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    discount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    tax NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    total NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    status VARCHAR(50) NOT NULL DEFAULT 'confirmed' CHECK (status IN ('draft', 'confirmed', 'cancelled')),
+    payment_status VARCHAR(50) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('paid', 'partial', 'unpaid')),
+    payment_method VARCHAR(100),
     notes TEXT,
-    created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_sales_org ON public.sales(organization_id);
+CREATE INDEX IF NOT EXISTS idx_sales_date ON public.sales(organization_id, date);
 
--- ============================================================================
--- 8. TABLA: SALE_ITEMS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.sale_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     sale_id UUID NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
     product_id UUID REFERENCES public.products(id) ON DELETE SET NULL,
     description VARCHAR(255) NOT NULL,
-    quantity NUMERIC(10,2) NOT NULL DEFAULT 1.00 CHECK (quantity > 0),
-    unit_price NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (unit_price >= 0),
-    unit_cost NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (unit_cost >= 0),
-    subtotal NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0)
+    quantity NUMERIC(15,2) NOT NULL,
+    unit_price NUMERIC(15,2) NOT NULL,
+    subtotal NUMERIC(15,2) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON public.sale_items(sale_id);
 
--- ============================================================================
--- 9. TABLA: EXPENSES
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    category VARCHAR(100) NOT NULL,
+    amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    date DATE NOT NULL,
+    description TEXT NOT NULL,
     supplier_id UUID REFERENCES public.suppliers(id) ON DELETE SET NULL,
     supplier_name VARCHAR(255),
-    category VARCHAR(100) NOT NULL,
-    description TEXT NOT NULL,
-    amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-    expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    due_date DATE,
-    paid_amount NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (paid_amount >= 0),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('paid', 'pending', 'cancelled')),
-    is_anomaly BOOLEAN NOT NULL DEFAULT FALSE,
-    anomaly_reason TEXT,
-    created_by UUID,
+    payment_method VARCHAR(100),
+    is_recurring BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_expenses_org ON public.expenses(organization_id);
 
 -- ============================================================================
--- 10. TABLA: RECEIVABLES
+-- 5. CUENTAS POR COBRAR, PAGAR Y PAGOS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.receivables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-    sale_id UUID REFERENCES public.sales(id) ON DELETE CASCADE,
-    sale_number VARCHAR(50),
-    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+    sale_id UUID REFERENCES public.sales(id) ON DELETE SET NULL,
+    sale_number VARCHAR(100),
+    customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255) NOT NULL,
-    amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-    balance NUMERIC(15,2) NOT NULL CHECK (balance >= 0),
+    amount NUMERIC(15,2) NOT NULL,
+    balance NUMERIC(15,2) NOT NULL,
     due_date DATE NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('paid', 'partial', 'pending', 'overdue')),
-    overdue_days INT NOT NULL DEFAULT 0,
-    notes TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'paid', 'overdue')),
+    overdue_days INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_receivables_org ON public.receivables(organization_id);
 
--- ============================================================================
--- 11. TABLA: RECEIVABLE_PAYMENTS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.receivable_payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     receivable_id UUID NOT NULL REFERENCES public.receivables(id) ON DELETE CASCADE,
-    amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    payment_method VARCHAR(50) DEFAULT 'Transferencia',
-    reference VARCHAR(100),
+    amount NUMERIC(15,2) NOT NULL,
+    payment_date DATE NOT NULL,
+    payment_method VARCHAR(100) NOT NULL,
+    reference VARCHAR(255),
     notes TEXT,
+    idempotency_key VARCHAR(255),
     created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_rec_payments_rec ON public.receivable_payments(receivable_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rec_payments_idemp ON public.receivable_payments(organization_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- ============================================================================
--- 12. TABLA: PAYABLES
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.payables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-    expense_id UUID REFERENCES public.expenses(id) ON DELETE CASCADE,
+    expense_id UUID REFERENCES public.expenses(id) ON DELETE SET NULL,
     supplier_id UUID REFERENCES public.suppliers(id) ON DELETE SET NULL,
     supplier_name VARCHAR(255) NOT NULL,
-    amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-    balance NUMERIC(15,2) NOT NULL CHECK (balance >= 0),
+    amount NUMERIC(15,2) NOT NULL,
+    balance NUMERIC(15,2) NOT NULL,
     due_date DATE NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('paid', 'partial', 'pending', 'overdue')),
-    notes TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'paid', 'overdue')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_payables_org ON public.payables(organization_id);
 
--- ============================================================================
--- 13. TABLA: PAYABLE_PAYMENTS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.payable_payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     payable_id UUID NOT NULL REFERENCES public.payables(id) ON DELETE CASCADE,
-    amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    payment_method VARCHAR(50) DEFAULT 'Transferencia',
-    reference VARCHAR(100),
+    amount NUMERIC(15,2) NOT NULL,
+    payment_date DATE NOT NULL,
+    payment_method VARCHAR(100) NOT NULL,
+    reference VARCHAR(255),
     notes TEXT,
+    idempotency_key VARCHAR(255),
     created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_pay_payments_pay ON public.payable_payments(payable_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pay_payments_idemp ON public.payable_payments(organization_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
 -- ============================================================================
--- 14. TABLA: QUOTES & QUOTE_ITEMS
+-- 6. COTIZACIONES, TAREAS, DOCUMENTOS Y AUDITORIA
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.quotes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    quote_number VARCHAR(100) NOT NULL,
     customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
     customer_name VARCHAR(255) NOT NULL,
-    quote_number VARCHAR(50) NOT NULL,
-    total NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (total >= 0),
+    date DATE NOT NULL,
     valid_until DATE NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'sent' CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'expired')),
+    total NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'accepted', 'rejected', 'expired')),
     notes TEXT,
-    created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_quotes_org ON public.quotes(organization_id);
 
 CREATE TABLE IF NOT EXISTS public.quote_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     quote_id UUID NOT NULL REFERENCES public.quotes(id) ON DELETE CASCADE,
     product_id UUID REFERENCES public.products(id) ON DELETE SET NULL,
     description VARCHAR(255) NOT NULL,
-    quantity NUMERIC(10,2) NOT NULL DEFAULT 1.00 CHECK (quantity > 0),
-    unit_price NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (unit_price >= 0),
-    subtotal NUMERIC(15,2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0)
+    quantity NUMERIC(15,2) NOT NULL,
+    unit_price NUMERIC(15,2) NOT NULL,
+    subtotal NUMERIC(15,2) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_quote_items_quote ON public.quote_items(quote_id);
 
--- ============================================================================
--- 15. TABLA: TASKS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
-    priority VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('high', 'medium', 'low')),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
-    due_date DATE,
-    assigned_to UUID,
-    suggested_by_ai BOOLEAN NOT NULL DEFAULT FALSE,
-    created_by UUID,
+    priority VARCHAR(50) NOT NULL DEFAULT 'medium' CHECK (priority IN ('urgent', 'high', 'medium', 'low')),
+    due_date DATE NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    assigned_to VARCHAR(255),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_tasks_org ON public.tasks(organization_id);
 
--- ============================================================================
--- 16. TABLA: DOCUMENTS
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL DEFAULT 'general',
-    category VARCHAR(100),
-    storage_path TEXT,
-    file_size VARCHAR(50),
-    mime_type VARCHAR(100),
-    related_entity_type VARCHAR(50),
-    related_entity_id UUID,
+    type VARCHAR(100) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    storage_path TEXT NOT NULL,
     uploaded_by UUID,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    deleted_at TIMESTAMPTZ
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_documents_org ON public.documents(organization_id);
 
--- ============================================================================
--- 17. TABLA: AUDIT_LOGS (INMUTABLE)
--- ============================================================================
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL,
-    user_name VARCHAR(255) NOT NULL,
-    action VARCHAR(255) NOT NULL,
+    user_id UUID,
+    user_name VARCHAR(255),
+    action VARCHAR(100) NOT NULL,
     entity_type VARCHAR(100) NOT NULL,
-    entity_id VARCHAR(100) NOT NULL,
+    entity_id UUID,
     details TEXT,
-    metadata JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+CREATE INDEX IF NOT EXISTS idx_audit_org ON public.audit_logs(organization_id);
 
 -- ============================================================================
--- 18. HABILITACIÓN DE ROW LEVEL SECURITY (RLS) EN TODAS LAS TABLAS
+-- 7. ACTIVACION DE ROW LEVEL SECURITY (RLS)
 -- ============================================================================
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
@@ -355,113 +350,40 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
--- ============================================================================
--- 19. POLÍTICAS RLS ESPECÍFICAS
--- ============================================================================
+-- Politicas RLS
+DROP POLICY IF EXISTS "org_member_read_org" ON public.organizations;
+CREATE POLICY "org_member_read_org" ON public.organizations FOR SELECT USING (
+    id IN (SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid())
+);
 
--- Organizations
-CREATE POLICY "Users can view organizations they belong to"
-ON public.organizations FOR SELECT
-USING (public.is_org_member(id));
+DROP POLICY IF EXISTS "org_member_read_members" ON public.organization_members;
+CREATE POLICY "org_member_read_members" ON public.organization_members FOR SELECT USING (
+    organization_id IN (SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid())
+);
 
-CREATE POLICY "Owners and admins can update their organization"
-ON public.organizations FOR UPDATE
-USING (public.is_org_admin(id));
+-- Politicas generales por tabla
+DO $$ 
+DECLARE
+    t TEXT;
+BEGIN
+    FOR t IN SELECT unnest(ARRAY['customers', 'suppliers', 'products', 'sales', 'expenses', 'receivables', 'receivable_payments', 'payables', 'payable_payments', 'quotes', 'tasks', 'documents', 'audit_logs'])
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "%I_org_isolation" ON public.%I', t, t);
+        EXECUTE format('CREATE POLICY "%I_org_isolation" ON public.%I FOR ALL USING (public.is_org_member(organization_id)) WITH CHECK (public.is_org_member(organization_id))', t, t);
+    END LOOP;
+END $$;
 
--- Organization Members
-CREATE POLICY "Users can view members of their organization"
-ON public.organization_members FOR SELECT
-USING (public.is_org_member(organization_id));
+-- Sub-tablas
+DROP POLICY IF EXISTS "sale_items_org_isolation" ON public.sale_items;
+CREATE POLICY "sale_items_org_isolation" ON public.sale_items FOR ALL USING (
+    sale_id IN (SELECT id FROM public.sales WHERE public.is_org_member(organization_id))
+) WITH CHECK (
+    sale_id IN (SELECT id FROM public.sales WHERE public.is_org_member(organization_id))
+);
 
-CREATE POLICY "Admins can manage organization members"
-ON public.organization_members FOR ALL
-USING (public.is_org_admin(organization_id));
-
--- Customers
-CREATE POLICY "Org members can view customers"
-ON public.customers FOR SELECT
-USING (public.is_org_member(organization_id) AND deleted_at IS NULL);
-
-CREATE POLICY "Org members can insert customers"
-ON public.customers FOR INSERT
-WITH CHECK (public.is_org_member(organization_id));
-
-CREATE POLICY "Org members can update customers"
-ON public.customers FOR UPDATE
-USING (public.is_org_member(organization_id));
-
-CREATE POLICY "Admins can delete customers"
-ON public.customers FOR DELETE
-USING (public.is_org_admin(organization_id));
-
--- Suppliers
-CREATE POLICY "Org members can view suppliers" ON public.suppliers FOR SELECT USING (public.is_org_member(organization_id) AND deleted_at IS NULL);
-CREATE POLICY "Org members can insert suppliers" ON public.suppliers FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-CREATE POLICY "Org members can update suppliers" ON public.suppliers FOR UPDATE USING (public.is_org_member(organization_id));
-CREATE POLICY "Admins can delete suppliers" ON public.suppliers FOR DELETE USING (public.is_org_admin(organization_id));
-
--- Products
-CREATE POLICY "Org members can view products" ON public.products FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert products" ON public.products FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-CREATE POLICY "Org members can update products" ON public.products FOR UPDATE USING (public.is_org_member(organization_id));
-CREATE POLICY "Admins can delete products" ON public.products FOR DELETE USING (public.is_org_admin(organization_id));
-
--- Sales & Sale Items
-CREATE POLICY "Org members can view sales" ON public.sales FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert sales" ON public.sales FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-CREATE POLICY "Org members can update sales" ON public.sales FOR UPDATE USING (public.is_org_member(organization_id));
-
-CREATE POLICY "Org members can view sale_items" ON public.sale_items FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert sale_items" ON public.sale_items FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-
--- Expenses
-CREATE POLICY "Org members can view expenses" ON public.expenses FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert expenses" ON public.expenses FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-CREATE POLICY "Admins can delete expenses" ON public.expenses FOR DELETE USING (public.is_org_admin(organization_id));
-
--- Receivables & Payments
-CREATE POLICY "Org members can view receivables" ON public.receivables FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can manage receivables" ON public.receivables FOR ALL USING (public.is_org_member(organization_id));
-
-CREATE POLICY "Org members can view receivable_payments" ON public.receivable_payments FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert receivable_payments" ON public.receivable_payments FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-
--- Payables & Payments
-CREATE POLICY "Org members can view payables" ON public.payables FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can manage payables" ON public.payables FOR ALL USING (public.is_org_member(organization_id));
-
-CREATE POLICY "Org members can view payable_payments" ON public.payable_payments FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert payable_payments" ON public.payable_payments FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-
--- Quotes & Quote Items
-CREATE POLICY "Org members can view quotes" ON public.quotes FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can manage quotes" ON public.quotes FOR ALL USING (public.is_org_member(organization_id));
-
-CREATE POLICY "Org members can view quote_items" ON public.quote_items FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can manage quote_items" ON public.quote_items FOR ALL USING (public.is_org_member(organization_id));
-
--- Tasks
-CREATE POLICY "Org members can view tasks" ON public.tasks FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can manage tasks" ON public.tasks FOR ALL USING (public.is_org_member(organization_id));
-
--- Documents
-CREATE POLICY "Org members can view documents" ON public.documents FOR SELECT USING (public.is_org_member(organization_id) AND deleted_at IS NULL);
-CREATE POLICY "Org members can insert documents" ON public.documents FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-CREATE POLICY "Admins can delete documents" ON public.documents FOR DELETE USING (public.is_org_admin(organization_id));
-
--- Audit Logs (Solo lectura y creación; nunca modificación ni borrado)
-CREATE POLICY "Org members can view audit_logs" ON public.audit_logs FOR SELECT USING (public.is_org_member(organization_id));
-CREATE POLICY "Org members can insert audit_logs" ON public.audit_logs FOR INSERT WITH CHECK (public.is_org_member(organization_id));
-
--- ============================================================================
--- 20. ÍNDICES DE RENDIMIENTO MULTI-TENANT
--- ============================================================================
-CREATE INDEX IF NOT EXISTS idx_customers_org_status ON public.customers(organization_id, status);
-CREATE INDEX IF NOT EXISTS idx_sales_org_date ON public.sales(organization_id, sale_date DESC);
-CREATE INDEX IF NOT EXISTS idx_sales_org_customer ON public.sales(organization_id, customer_id);
-CREATE INDEX IF NOT EXISTS idx_expenses_org_date ON public.expenses(organization_id, expense_date DESC);
-CREATE INDEX IF NOT EXISTS idx_receivables_org_due ON public.receivables(organization_id, due_date, status);
-CREATE INDEX IF NOT EXISTS idx_payables_org_due ON public.payables(organization_id, due_date, status);
-CREATE INDEX IF NOT EXISTS idx_quotes_org_status ON public.quotes(organization_id, status);
-CREATE INDEX IF NOT EXISTS idx_tasks_org_status ON public.tasks(organization_id, status);
-CREATE INDEX IF NOT EXISTS idx_audit_org_created ON public.audit_logs(organization_id, created_at DESC);
+DROP POLICY IF EXISTS "quote_items_org_isolation" ON public.quote_items;
+CREATE POLICY "quote_items_org_isolation" ON public.quote_items FOR ALL USING (
+    quote_id IN (SELECT id FROM public.quotes WHERE public.is_org_member(organization_id))
+) WITH CHECK (
+    quote_id IN (SELECT id FROM public.quotes WHERE public.is_org_member(organization_id))
+);
