@@ -170,8 +170,8 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setProducts(pRes.data);
           setSales(sl.data);
           setExpenses(ex.data);
-          setReceivables(rec);
-          setPayables(pay);
+          setReceivables(rec.data);
+          setPayables(pay.data);
           setQuotes(q.data);
           setTasks(t);
           setDocuments(d);
@@ -302,13 +302,13 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const recordPaymentReceivable = async (id: string, amount: number): Promise<void> => {
     if (!currentOrg) return;
-    const updated = await repo.recordPaymentReceivable(currentOrg.id, id, amount);
+    const updated = await repo.recordPaymentReceivable(currentOrg.id, id, typeof amount === "number" ? { amount } : amount);
     setReceivables(prev => prev.map(r => r.id === id ? updated : r));
   };
 
   const recordPaymentPayable = async (id: string, amount: number): Promise<void> => {
     if (!currentOrg) return;
-    const updated = await repo.recordPaymentPayable(currentOrg.id, id, amount);
+    const updated = await repo.recordPaymentPayable(currentOrg.id, id, typeof amount === "number" ? { amount } : amount);
     setPayables(prev => prev.map(p => p.id === id ? updated : p));
   };
 

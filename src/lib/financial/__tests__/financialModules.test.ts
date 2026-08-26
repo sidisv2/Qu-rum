@@ -49,7 +49,7 @@ export async function runFinancialModulesTestSuite() {
 
   // 2. Comprobación de que venta a crédito genera cuenta por cobrar automáticamente
   const receivables = await repo.getReceivables(org.id);
-  assert(receivables.some(r => r.saleId === sale.id && r.balance === 4500), "Venta impaga: genera Receivable con balance exacto");
+  assert(receivables.data.some(r => r.saleId === sale.id && r.balance === 4500), "Venta impaga: genera Receivable con balance exacto");
 
   // 3. Paginación y búsqueda de Ventas
   const salesPaging = await repo.getSales(org.id, { page: 1, pageSize: 10 });

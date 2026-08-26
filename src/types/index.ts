@@ -1,4 +1,4 @@
-﻿export type Role = 'owner' | 'admin' | 'member';
+export type Role = 'owner' | 'admin' | 'member';
 
 export interface User {
   id: string;
@@ -121,6 +121,19 @@ export interface Expense {
   createdAt: string;
 }
 
+export interface PaymentRecord {
+  id: string;
+  organizationId: string;
+  documentId: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string;
+  reference?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
 export type ReceivableStatus = 'pending' | 'partial' | 'paid' | 'overdue';
 
 export interface Receivable {
@@ -136,6 +149,7 @@ export interface Receivable {
   status: ReceivableStatus;
   overdueDays: number;
   notes?: string;
+  payments?: PaymentRecord[];
   createdAt: string;
 }
 
@@ -152,6 +166,7 @@ export interface Payable {
   dueDate: string;
   status: PayableStatus;
   notes?: string;
+  payments?: PaymentRecord[];
   createdAt: string;
 }
 

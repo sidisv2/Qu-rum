@@ -1,4 +1,4 @@
-﻿import { IDataRepository, PaginatedResult, PaginationParams } from "./types";
+﻿import { IDataRepository, PaginatedResult, PaginationParams, PaymentParams } from "./types";
 import { supabase, isSupabaseConfigured } from "../supabase/client";
 import {
   Organization,
@@ -9,6 +9,7 @@ import {
   Expense,
   Receivable,
   Payable,
+  PaymentRecord,
   Quote,
   Task,
   DocumentRecord,
@@ -594,11 +595,20 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
-  async getReceivables(orgId: string): Promise<Receivable[]> {
+  async getReceivables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Receivable>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("receivables").select("*").eq("organization_id", orgId);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let query = supabase!.from("receivables").select("*, receivable_payments(*)", { count: "exact" }).eq("organization_id", orgId);
+    if (params?.search) {
+      query = query.or(`customer_name.ilike.%${params.search}%,sale_number.ilike.%${params.search}%`);
+    }
+    query = query.order("due_date", { ascending: true }).range(from, to);
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((r: any) => ({
+    const mapped: Receivable[] = (data || []).map((r: any) => ({
       id: r.id,
       organizationId: r.organization_id,
       saleId: r.sale_id,
@@ -610,11 +620,94 @@ export class SupabaseRepository implements IDataRepository {
       dueDate: r.due_date,
       status: r.status,
       overdueDays: r.overdue_days || 0,
+      payments: (r.receivable_payments || []).map((p: any) => ({
+        id: p.id,
+        organizationId: p.organization_id,
+        documentId: p.receivable_id,
+        amount: Number(p.amount),
+        paymentDate: p.payment_date,
+        paymentMethod: p.payment_method,
+        reference: p.reference,
+        notes: p.notes,
+        createdBy: p.created_by,
+        createdAt: p.created_at
+      })),
       createdAt: r.created_at
+    }));
+    return { data: mapped, total: count || mapped.length, page, pageSize };
+  }
+
+  async getReceivableById(orgId: string, id: string): Promise<Receivable | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("receivables").select("*, receivable_payments(*)").eq("id", id).eq("organization_id", orgId).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      saleId: data.sale_id,
+      saleNumber: data.sale_number,
+      customerId: data.customer_id,
+      customerName: data.customer_name,
+      amount: Number(data.amount),
+      balance: Number(data.balance),
+      dueDate: data.due_date,
+      status: data.status,
+      overdueDays: data.overdue_days || 0,
+      payments: (data.receivable_payments || []).map((p: any) => ({
+        id: p.id,
+        organizationId: p.organization_id,
+        documentId: p.receivable_id,
+        amount: Number(p.amount),
+        paymentDate: p.payment_date,
+        paymentMethod: p.payment_method,
+        reference: p.reference,
+        notes: p.notes,
+        createdBy: p.created_by,
+        createdAt: p.created_at
+      })),
+      createdAt: data.created_at
+    };
+  }
+
+  async getReceivablePayments(orgId: string, receivableId: string): Promise<PaymentRecord[]> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("receivable_payments").select("*").eq("receivable_id", receivableId).eq("organization_id", orgId).order("payment_date", { ascending: false });
+    if (error) throw error;
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      organizationId: p.organization_id,
+      documentId: p.receivable_id,
+      amount: Number(p.amount),
+      paymentDate: p.payment_date,
+      paymentMethod: p.payment_method,
+      reference: p.reference,
+      notes: p.notes,
+      createdBy: p.created_by,
+      createdAt: p.created_at
     }));
   }
 
-  async recordPaymentReceivable(orgId: string, receivableId: string, amount: number): Promise<Receivable> {
+  async recordPaymentReceivable(orgId: string, receivableId: string, payment: PaymentParams): Promise<Receivable> {
+    this.checkClient();
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase!.rpc("record_receivable_payment_transaction", {
+        p_organization_id: orgId,
+        p_receivable_id: receivableId,
+        p_amount: payment.amount,
+        p_payment_date: payment.paymentDate || new Date().toISOString().split("T")[0],
+        p_payment_method: payment.paymentMethod || "Transferencia",
+        p_reference: payment.reference || null,
+        p_notes: payment.notes || null,
+        p_idempotency_key: payment.idempotencyKey || null
+      });
+      if (!rpcErr && rpcRes) {
+        const updated = await this.getReceivableById(orgId, receivableId);
+        if (updated) return updated;
+      }
+    } catch (e) {
+      console.warn("record_receivable_payment_transaction RPC fallback:", e);
+    }
+    const amount = payment.amount;
     this.checkClient();
     const { data: cur } = await supabase!.from("receivables").select("balance").eq("id", receivableId).single();
     const newBal = Math.max(0, Number(cur?.balance || 0) - amount);
@@ -638,11 +731,20 @@ export class SupabaseRepository implements IDataRepository {
     };
   }
 
-  async getPayables(orgId: string): Promise<Payable[]> {
+  async getPayables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Payable>> {
     this.checkClient();
-    const { data, error } = await supabase!.from("payables").select("*").eq("organization_id", orgId);
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let query = supabase!.from("payables").select("*, payable_payments(*)", { count: "exact" }).eq("organization_id", orgId);
+    if (params?.search) {
+      query = query.or(`supplier_name.ilike.%${params.search}%`);
+    }
+    query = query.order("due_date", { ascending: true }).range(from, to);
+    const { data, error, count } = await query;
     if (error) throw error;
-    return (data || []).map((p: any) => ({
+    const mapped: Payable[] = (data || []).map((p: any) => ({
       id: p.id,
       organizationId: p.organization_id,
       supplierId: p.supplier_id,
@@ -651,11 +753,91 @@ export class SupabaseRepository implements IDataRepository {
       balance: Number(p.balance),
       dueDate: p.due_date,
       status: p.status,
+      payments: (p.payable_payments || []).map((pay: any) => ({
+        id: pay.id,
+        organizationId: pay.organization_id,
+        documentId: pay.payable_id,
+        amount: Number(pay.amount),
+        paymentDate: pay.payment_date,
+        paymentMethod: pay.payment_method,
+        reference: pay.reference,
+        notes: pay.notes,
+        createdBy: pay.created_by,
+        createdAt: pay.created_at
+      })),
+      createdAt: p.created_at
+    }));
+    return { data: mapped, total: count || mapped.length, page, pageSize };
+  }
+
+  async getPayableById(orgId: string, id: string): Promise<Payable | null> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("payables").select("*, payable_payments(*)").eq("id", id).eq("organization_id", orgId).single();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      organizationId: data.organization_id,
+      supplierId: data.supplier_id,
+      supplierName: data.supplier_name,
+      amount: Number(data.amount),
+      balance: Number(data.balance),
+      dueDate: data.due_date,
+      status: data.status,
+      payments: (data.payable_payments || []).map((p: any) => ({
+        id: p.id,
+        organizationId: p.organization_id,
+        documentId: p.payable_id,
+        amount: Number(p.amount),
+        paymentDate: p.payment_date,
+        paymentMethod: p.payment_method,
+        reference: p.reference,
+        notes: p.notes,
+        createdBy: p.created_by,
+        createdAt: p.created_at
+      })),
+      createdAt: data.created_at
+    };
+  }
+
+  async getPayablePayments(orgId: string, payableId: string): Promise<PaymentRecord[]> {
+    this.checkClient();
+    const { data, error } = await supabase!.from("payable_payments").select("*").eq("payable_id", payableId).eq("organization_id", orgId).order("payment_date", { ascending: false });
+    if (error) throw error;
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      organizationId: p.organization_id,
+      documentId: p.payable_id,
+      amount: Number(p.amount),
+      paymentDate: p.payment_date,
+      paymentMethod: p.payment_method,
+      reference: p.reference,
+      notes: p.notes,
+      createdBy: p.created_by,
       createdAt: p.created_at
     }));
   }
 
-  async recordPaymentPayable(orgId: string, payableId: string, amount: number): Promise<Payable> {
+  async recordPaymentPayable(orgId: string, payableId: string, payment: PaymentParams): Promise<Payable> {
+    this.checkClient();
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase!.rpc("record_payable_payment_transaction", {
+        p_organization_id: orgId,
+        p_payable_id: payableId,
+        p_amount: payment.amount,
+        p_payment_date: payment.paymentDate || new Date().toISOString().split("T")[0],
+        p_payment_method: payment.paymentMethod || "Transferencia",
+        p_reference: payment.reference || null,
+        p_notes: payment.notes || null,
+        p_idempotency_key: payment.idempotencyKey || null
+      });
+      if (!rpcErr && rpcRes) {
+        const updated = await this.getPayableById(orgId, payableId);
+        if (updated) return updated;
+      }
+    } catch (e) {
+      console.warn("record_payable_payment_transaction RPC fallback:", e);
+    }
+    const amount = payment.amount;
     this.checkClient();
     const { data: cur } = await supabase!.from("payables").select("balance").eq("id", payableId).single();
     const newBal = Math.max(0, Number(cur?.balance || 0) - amount);

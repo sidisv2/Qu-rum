@@ -1,4 +1,4 @@
-﻿import { IDataRepository, PaginatedResult, PaginationParams } from "./types";
+﻿import { IDataRepository, PaginatedResult, PaginationParams, PaymentParams } from "./types";
 import { OrganizationStore, AppState } from "../db/orgStore";
 import {
   Organization,
@@ -9,6 +9,7 @@ import {
   Expense,
   Receivable,
   Payable,
+  PaymentRecord,
   Quote,
   Task,
   DocumentRecord,
@@ -395,56 +396,140 @@ export class LocalRepository implements IDataRepository {
     return updated;
   }
 
-  async getReceivables(orgId: string): Promise<Receivable[]> {
-    return this.getState(orgId).receivables.filter(r => r.organizationId === orgId);
+  async getReceivables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Receivable>> {
+    let items = this.getState(orgId).receivables.filter(r => r.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(r => r.customerName.toLowerCase().includes(q) || (r.saleNumber && r.saleNumber.toLowerCase().includes(q)));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    return { data: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize };
   }
 
-  async recordPaymentReceivable(orgId: string, receivableId: string, amount: number): Promise<Receivable> {
+  async getReceivableById(orgId: string, id: string): Promise<Receivable | null> {
+    return this.getState(orgId).receivables.find(r => r.id === id && r.organizationId === orgId) || null;
+  }
+
+  async getReceivablePayments(orgId: string, receivableId: string): Promise<PaymentRecord[]> {
+    const r = await this.getReceivableById(orgId, receivableId);
+    return r?.payments || [];
+  }
+
+  async recordPaymentReceivable(orgId: string, receivableId: string, payment: PaymentParams): Promise<Receivable> {
     const st = this.getState(orgId);
-    const cleanAmount = safeRound(amount, 2);
-    let updatedRec: Receivable | null = null;
-    st.receivables = st.receivables.map(r => {
-      if (r.id === receivableId && r.organizationId === orgId) {
-        const newBalance = Math.max(0, safeRound(r.balance - cleanAmount, 2));
-        updatedRec = {
-          ...r,
-          balance: newBalance,
-          status: newBalance === 0 ? "paid" : "partial"
-        };
-        return updatedRec;
-      }
-      return r;
+    const rec = st.receivables.find(r => r.id === receivableId && r.organizationId === orgId);
+    if (!rec) throw new Error("Receivable not found");
+    if (rec.status === 'paid' || rec.balance <= 0) throw new Error("La cuenta ya se encuentra saldada");
+
+    const cleanAmount = safeRound(payment.amount, 2);
+    if (cleanAmount <= 0) throw new Error("El monto del pago debe ser mayor a cero");
+    if (cleanAmount > rec.balance) throw new Error("El monto del pago supera el saldo pendiente");
+
+    const newBalance = safeRound(rec.balance - cleanAmount, 2);
+    rec.balance = newBalance;
+    rec.status = newBalance === 0 ? 'paid' : 'partial';
+
+    const paymentRecord: PaymentRecord = {
+      id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+      organizationId: orgId,
+      documentId: receivableId,
+      amount: cleanAmount,
+      paymentDate: payment.paymentDate || new Date().toISOString().split("T")[0],
+      paymentMethod: payment.paymentMethod || "Transferencia",
+      reference: payment.reference,
+      notes: payment.notes,
+      createdAt: new Date().toISOString()
+    };
+    if (!rec.payments) rec.payments = [];
+    rec.payments.unshift(paymentRecord);
+
+    const cust = st.customers.find(c => c.id === rec.customerId);
+    if (cust) {
+      cust.totalPendingDebt = Math.max(0, safeRound(cust.totalPendingDebt - cleanAmount, 2));
+    }
+
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "REGISTRAR_COBRO",
+      entityType: "receivable_payment",
+      entityId: paymentRecord.id,
+      details: "Cobro de " + cleanAmount + " aplicado a " + (rec.saleNumber || rec.id) + ". Saldo restante: " + newBalance,
+      timestamp: new Date().toISOString()
     });
+
     this.saveState(st);
-    if (!updatedRec) throw new Error("Receivable not found");
-    return updatedRec;
+    return rec;
   }
 
-  async getPayables(orgId: string): Promise<Payable[]> {
-    return this.getState(orgId).payables.filter(p => p.organizationId === orgId);
+  async getPayables(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Payable>> {
+    let items = this.getState(orgId).payables.filter(p => p.organizationId === orgId);
+    if (params?.search) {
+      const q = params.search.toLowerCase();
+      items = items.filter(p => p.supplierName.toLowerCase().includes(q));
+    }
+    const page = params?.page || 1;
+    const pageSize = params?.pageSize || 50;
+    return { data: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize };
   }
 
-  async recordPaymentPayable(orgId: string, payableId: string, amount: number): Promise<Payable> {
+  async getPayableById(orgId: string, id: string): Promise<Payable | null> {
+    return this.getState(orgId).payables.find(p => p.id === id && p.organizationId === orgId) || null;
+  }
+
+  async getPayablePayments(orgId: string, payableId: string): Promise<PaymentRecord[]> {
+    const p = await this.getPayableById(orgId, payableId);
+    return p?.payments || [];
+  }
+
+  async recordPaymentPayable(orgId: string, payableId: string, payment: PaymentParams): Promise<Payable> {
     const st = this.getState(orgId);
-    const cleanAmount = safeRound(amount, 2);
-    let updatedPay: Payable | null = null;
-    st.payables = st.payables.map(p => {
-      if (p.id === payableId && p.organizationId === orgId) {
-        const newBalance = Math.max(0, safeRound(p.balance - cleanAmount, 2));
-        updatedPay = {
-          ...p,
-          balance: newBalance,
-          status: newBalance === 0 ? "paid" : "partial"
-        };
-        return updatedPay;
-      }
-      return p;
+    const pay = st.payables.find(p => p.id === payableId && p.organizationId === orgId);
+    if (!pay) throw new Error("Payable not found");
+    if (pay.status === 'paid' || pay.balance <= 0) throw new Error("La cuenta ya se encuentra saldada");
+
+    const cleanAmount = safeRound(payment.amount, 2);
+    if (cleanAmount <= 0) throw new Error("El monto del pago debe ser mayor a cero");
+    if (cleanAmount > pay.balance) throw new Error("El monto del pago supera el saldo pendiente");
+
+    const newBalance = safeRound(pay.balance - cleanAmount, 2);
+    pay.balance = newBalance;
+    pay.status = newBalance === 0 ? 'paid' : 'partial';
+
+    const paymentRecord: PaymentRecord = {
+      id: "pay-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+      organizationId: orgId,
+      documentId: payableId,
+      amount: cleanAmount,
+      paymentDate: payment.paymentDate || new Date().toISOString().split("T")[0],
+      paymentMethod: payment.paymentMethod || "Transferencia",
+      reference: payment.reference,
+      notes: payment.notes,
+      createdAt: new Date().toISOString()
+    };
+    if (!pay.payments) pay.payments = [];
+    pay.payments.unshift(paymentRecord);
+
+    st.auditLogs.unshift({
+      id: "log-" + Date.now(),
+      organizationId: orgId,
+      userId: "usr-local",
+      userName: "Usuario Local",
+      action: "REGISTRAR_PAGO_PROVEEDOR",
+      entityType: "payable_payment",
+      entityId: paymentRecord.id,
+      details: "Pago de " + cleanAmount + " a " + pay.supplierName + ". Saldo restante: " + newBalance,
+      timestamp: new Date().toISOString()
     });
+
     this.saveState(st);
-    if (!updatedPay) throw new Error("Payable not found");
-    return updatedPay;
+    return pay;
   }
 
+  // --- TASKS ---
   async getTasks(orgId: string): Promise<Task[]> {
     return this.getState(orgId).tasks.filter(t => t.organizationId === orgId);
   }
