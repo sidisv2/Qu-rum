@@ -26,6 +26,7 @@ export const SubscriptionView: React.FC = () => {
   const MARKETING_FOUNDER_OFFSET = 5; // Base fija de 5 cupos tomados
   const TOTAL_FOUNDER_SLOTS = 10;
   const [realFounderCount, setRealFounderCount] = useState<number>(0);
+  const [aiQueriesUsed, setAiQueriesUsed] = useState<number>(0);
   const [currentSub, setCurrentSub] = useState<CurrentSubscription>({
     planId: "founder",
     status: "trialing",
@@ -96,6 +97,36 @@ export const SubscriptionView: React.FC = () => {
             }
           } catch (_rpcErr) {
             setRealFounderCount(0);
+          }
+
+          // 1.1 Consultar mensajes reales del Director IA para calcular consultas usadas
+          try {
+            const { count: aiCount } = await supabase
+              .from("ai_messages")
+              .select("id", { count: "exact", head: true })
+              .eq("organization_id", currentOrg.id)
+              .eq("role", "user");
+
+            if (typeof aiCount === "number") {
+              setAiQueriesUsed(aiCount);
+            } else {
+              // Fallback de localStorage
+              const localData = localStorage.getItem("direx_ai_chat_" + currentOrg.id);
+              if (localData) {
+                const parsed = JSON.parse(localData);
+                const userCount = Array.isArray(parsed) ? parsed.filter((m: any) => m.sender === "user").length : 0;
+                setAiQueriesUsed(userCount);
+              }
+            }
+          } catch (_aiErr) {
+            try {
+              const localData = localStorage.getItem("direx_ai_chat_" + currentOrg.id);
+              if (localData) {
+                const parsed = JSON.parse(localData);
+                const userCount = Array.isArray(parsed) ? parsed.filter((m: any) => m.sender === "user").length : 0;
+                setAiQueriesUsed(userCount);
+              }
+            } catch {}
           }
 
           // 2. Consultar suscripción actual
@@ -255,7 +286,7 @@ export const SubscriptionView: React.FC = () => {
                   Estado: Plan de Prueba (Free)
                 </div>
                 <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
-                  Te quedan {trialDays} días de prueba y 10 consultas de Director IA. Elegí tu plan para desbloquear acceso ilimitado y sumar a tu equipo.
+                  Te quedan {trialDays} días de prueba y {Math.max(0, 10 - aiQueriesUsed)} de 10 consultas de Director IA. Elegí tu plan para desbloquear acceso ilimitado y sumar a tu equipo.
                 </div>
               </div>
             </div>
