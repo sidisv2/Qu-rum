@@ -18,6 +18,7 @@ interface AuthContextType {
   signUp: (email: string, pass: string, fullName: string) => Promise<{ error?: string; requiresEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
+  signInWithGoogle: () => Promise<{ error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -188,6 +189,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { requiresEmailConfirmation: true };
   };
 
+  const signInWithGoogle = async (): Promise<{ error?: string }> => {
+    try {
+      if (dataMode === "local" || !supabase) {
+        setUser(LOCAL_DEMO_USER);
+        setSession({ user: LOCAL_DEMO_USER, supabaseUser: null, token: "local-token" });
+        return {};
+      }
+      const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://direx.online/";
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectUrl
+        }
+      });
+      if (error) {
+        return { error: error.message };
+      }
+      return {};
+    } catch (err: any) {
+      return { error: err.message || "Error al conectar con Google" };
+    }
+  };
+
   const signOut = async (): Promise<void> => {
     if (supabase) {
       await supabase.auth.signOut();
@@ -217,7 +241,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signIn,
         signUp,
         signOut,
-        resetPassword
+        resetPassword,
+        signInWithGoogle
       }}
     >
       {children}
