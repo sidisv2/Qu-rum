@@ -21,7 +21,8 @@ export const SECTION_TO_PATH: Record<NavSection, string> = {
   "beta-monitoring": "/configuracion/monitoreo-beta",
   "audit": "/configuracion/auditoria",
   "settings": "/configuracion/empresa",
-  "support": "/soporte"
+  "support": "/soporte",
+  "legal": "/terminos"
 };
 
 export const PATH_TO_SECTION: Record<string, NavSection> = Object.entries(SECTION_TO_PATH).reduce(
@@ -40,7 +41,11 @@ export const PATH_TO_SECTION: Record<string, NavSection> = Object.entries(SECTIO
     "/subscription": "subscription",
     "/pricing": "subscription",
     "/soporte": "support",
-    "/ayuda": "support"
+    "/ayuda": "support",
+    "/terminos": "legal",
+    "/privacidad": "legal",
+    "/legal": "legal",
+    "/terminos-y-condiciones": "legal"
   } as Record<string, NavSection>
 );
 

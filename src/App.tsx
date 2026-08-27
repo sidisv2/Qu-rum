@@ -27,6 +27,7 @@ import { SmartCollectionsView } from "./components/collections/SmartCollectionsV
 import { BetaMonitoringView } from "./components/monitoring/BetaMonitoringView";
 import { SubscriptionView } from "./components/subscription/SubscriptionView";
 import { SupportView } from "./components/support/SupportView";
+import { LegalView } from "./components/legal/LegalView";
 import { FeedbackWidget } from "./components/feedback/FeedbackWidget";
 import { Analytics } from "@vercel/analytics/react";
 

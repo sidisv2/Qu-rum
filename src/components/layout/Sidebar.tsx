@@ -48,7 +48,8 @@ export type NavSection =
   | "beta-monitoring"
   | "audit"
   | "settings"
-  | "support";
+  | "support"
+  | "legal";
 
 interface NavItem {
   id: NavSection;

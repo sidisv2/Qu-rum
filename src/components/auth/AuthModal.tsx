@@ -371,6 +371,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Footer Alternador */}
         <div style={{ marginTop: "1.25rem", textAlign: "center", fontSize: "0.8125rem", color: "var(--color-text-secondary)" }}>
+          <div style={{ marginBottom: "0.75rem", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+            Al continuar aceptás nuestros{" "}
+            <a
+              href="/terminos"
+              onClick={(e) => {
+                e.preventDefault();
+                onClose();
+                window.history.pushState(null, "", "/terminos");
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              }}
+              style={{ color: "var(--color-primary, #4f46e5)", textDecoration: "underline", cursor: "pointer" }}
+            >
+              Términos del Servicio
+            </a>{" "}
+            y{" "}
+            <a
+              href="/privacidad"
+              onClick={(e) => {
+                e.preventDefault();
+                onClose();
+                window.history.pushState(null, "", "/privacidad");
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              }}
+              style={{ color: "var(--color-primary, #4f46e5)", textDecoration: "underline", cursor: "pointer" }}
+            >
+              Política de Privacidad
+            </a>
+          </div>
+
           {mode === "login" ? (
             <span>
               ¿No tenés cuenta?{" "}
