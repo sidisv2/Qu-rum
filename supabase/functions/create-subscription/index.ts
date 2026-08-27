@@ -20,6 +20,12 @@ function getCorsHeaders(reqOrigin: string | null) {
   };
 }
 
+const STATIC_PLANS: Record<string, { name: string; price_ars: number }> = {
+  founder: { name: "Plan Fundador (Exclusivo 10 Cupos)", price_ars: 9900 },
+  starter: { name: "Plan Starter", price_ars: 19900 },
+  pro: { name: "Plan Pro", price_ars: 44900 }
+};
+
 serve(async (req) => {
   const reqOrigin = req.headers.get("Origin");
   const corsHeaders = getCorsHeaders(reqOrigin);
@@ -63,30 +69,38 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Permisos insuficientes" }), { status: 403, headers: corsHeaders });
     }
 
-    // 2. Verificar cupo de Fundador si el plan pedido es 'founder'
+    // 2. Obtener datos del plan
+    let plan = STATIC_PLANS[planId];
+    if (!plan) {
+      const { data: dbPlan } = await supabaseClient
+        .from("subscription_plans")
+        .select("name, price_ars")
+        .eq("id", planId)
+        .single();
+      if (dbPlan) plan = dbPlan;
+    }
+
+    if (!plan) {
+      return new Response(JSON.stringify({ error: "Plan inexistente" }), { status: 400, headers: corsHeaders });
+    }
+
+    // 3. Verificar cupo de Fundador si el plan pedido es 'founder'
     let isFounderPrice = false;
     let founderExpiresAt = null;
 
     if (planId === "founder") {
-      const { data: count, error: countErr } = await supabaseClient.rpc("get_founder_slots_count");
-      if (!countErr && typeof count === "number" && count >= 10) {
-        return new Response(JSON.stringify({ error: "El cupo de 10 clientes Fundadores se encuentra agotado" }), { status: 400, headers: corsHeaders });
+      try {
+        const { data: count } = await supabaseClient.rpc("get_founder_slots_count");
+        if (typeof count === "number" && count >= 10) {
+          return new Response(JSON.stringify({ error: "El cupo de 10 clientes Fundadores se encuentra agotado" }), { status: 400, headers: corsHeaders });
+        }
+      } catch (_e) {
+        // Fallback
       }
       isFounderPrice = true;
       const oneYear = new Date();
       oneYear.setFullYear(oneYear.getFullYear() + 1);
       founderExpiresAt = oneYear.toISOString();
-    }
-
-    // 3. Obtener datos del plan
-    const { data: plan, error: planErr } = await supabaseClient
-      .from("subscription_plans")
-      .select("name, price_ars")
-      .eq("id", planId)
-      .single();
-
-    if (planErr || !plan) {
-      return new Response(JSON.stringify({ error: "Plan inexistente" }), { status: 400, headers: corsHeaders });
     }
 
     // 4. Crear Preapproval en Mercado Pago API
@@ -110,26 +124,32 @@ serve(async (req) => {
         })
       });
 
-      const mpData = await mpResponse.json();
-      initPoint = mpData.init_point || mpData.sandbox_init_point || "";
+      if (mpResponse.ok) {
+        const mpData = await mpResponse.json();
+        initPoint = mpData.init_point || mpData.sandbox_init_point || "";
+      }
     }
 
-    // Si es modo sandbox o demo sin token configurado, generar fallback seguro
+    // Fallback seguro
     if (!initPoint) {
       initPoint = `https://www.mercadopago.com.ar/subscriptions/checkout?pref_id=sandbox-${planId}-${organizationId}`;
     }
 
-    // 5. Registrar / actualizar estado en base de datos
-    await supabaseClient
-      .from("organization_subscriptions")
-      .upsert({
-        organization_id: organizationId,
-        plan_id: planId,
-        status: "trialing",
-        is_founder_price: isFounderPrice,
-        founder_price_expires_at: founderExpiresAt,
-        updated_at: new Date().toISOString()
-      }, { onConflict: "organization_id" });
+    // 5. Registrar / actualizar estado en base de datos si la tabla existe
+    try {
+      await supabaseClient
+        .from("organization_subscriptions")
+        .upsert({
+          organization_id: organizationId,
+          plan_id: planId,
+          status: "trialing",
+          is_founder_price: isFounderPrice,
+          founder_price_expires_at: founderExpiresAt,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "organization_id" });
+    } catch (_dbErr) {
+      // Ignorar si la tabla no fue migrada aún
+    }
 
     return new Response(JSON.stringify({
       checkoutUrl: initPoint,

@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from "react";
-import { CreditCard, Check, Sparkles, Shield, Clock, AlertCircle, ExternalLink } from "lucide-react";
+import { CreditCard, Check, Sparkles, Clock, AlertCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
+import { supabase } from "../../lib/supabase/client";
 import { Button } from "../ui/Button";
 
 interface Plan {
@@ -12,15 +13,24 @@ interface Plan {
   isFounder?: boolean;
 }
 
+interface CurrentSubscription {
+  planId: string;
+  status: "trialing" | "active" | "past_due" | "canceled" | "none";
+  isFounderPrice: boolean;
+  currentPeriodEnd?: string | null;
+}
+
 export const SubscriptionView: React.FC = () => {
   const { currentOrg } = useOrg();
-  const [founderSlotsTaken, setFounderSlotsTaken] = useState(3); // Ejemplo de conteo actual
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<{ id: string; status: string; isFounder: boolean }>({
-    id: "founder",
+  const [founderSlotsTaken, setFounderSlotsTaken] = useState<number | null>(null);
+  const [currentSub, setCurrentSub] = useState<CurrentSubscription>({
+    planId: "founder",
     status: "trialing",
-    isFounder: true
+    isFounderPrice: true
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   const plans: Plan[] = [
     {
@@ -64,18 +74,87 @@ export const SubscriptionView: React.FC = () => {
     }
   ];
 
+  useEffect(() => {
+    async function loadSubscriptionData() {
+      if (!currentOrg?.id) return;
+      setIsInitializing(true);
+      try {
+        if (supabase) {
+          // 1. Consultar cupos de Fundador
+          const { data: slots, error: slotsErr } = await supabase.rpc("get_founder_slots_count");
+          if (!slotsErr && typeof slots === "number") {
+            setFounderSlotsTaken(slots);
+          } else {
+            setFounderSlotsTaken(0);
+          }
+
+          // 2. Consultar suscripción actual
+          const { data: subData, error: subErr } = await supabase
+            .from("organization_subscriptions")
+            .select("plan_id, status, is_founder_price, current_period_end")
+            .eq("organization_id", currentOrg.id)
+            .maybeSingle();
+
+          if (!subErr && subData) {
+            setCurrentSub({
+              planId: subData.plan_id,
+              status: subData.status as any,
+              isFounderPrice: subData.is_founder_price,
+              currentPeriodEnd: subData.current_period_end
+            });
+          }
+        }
+      } catch (_e) {
+        // Fallback controlado
+      } finally {
+        setIsInitializing(false);
+      }
+    }
+
+    loadSubscriptionData();
+  }, [currentOrg?.id]);
+
   const handleSubscribe = async (planId: string) => {
+    if (!currentOrg?.id) return;
     setIsLoading(true);
+    setActionError(null);
+
     try {
-      // Simular llamada a create-subscription o redirección a Mercado Pago
-      const checkoutUrl = `https://www.mercadopago.com.ar/subscriptions/checkout?pref_id=sandbox-${planId}-${currentOrg?.id || "org"}`;
-      window.open(checkoutUrl, "_blank");
-    } catch (_e) {
-      // Fallback
+      if (supabase) {
+        const { data, error } = await supabase.functions.invoke("create-subscription", {
+          body: {
+            organizationId: currentOrg.id,
+            planId,
+            backUrl: window.location.href
+          }
+        });
+
+        if (error) {
+          setActionError(error.message || "No se pudo iniciar el proceso de suscripción");
+          return;
+        }
+
+        if (data?.error) {
+          setActionError(data.error);
+          return;
+        }
+
+        if (data?.checkoutUrl) {
+          window.location.href = data.checkoutUrl;
+          return;
+        }
+      }
+
+      // Fallback sandbox
+      window.location.href = `https://www.mercadopago.com.ar/subscriptions/checkout?pref_id=sandbox-${planId}-${currentOrg.id}`;
+    } catch (err: any) {
+      setActionError(err.message || "Error al conectar con la pasarela de pagos");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const isFounderAvailable = founderSlotsTaken === null || founderSlotsTaken < 10;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -91,32 +170,41 @@ export const SubscriptionView: React.FC = () => {
         </p>
       </div>
 
+      {actionError && (
+        <div className="card" style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: "#991b1b", display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem" }}>
+          <AlertCircle size={18} />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       {/* Estado Actual del Tenant */}
       <div className="card" style={{ backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <Sparkles size={24} style={{ color: "#16a34a" }} />
           <div>
             <div style={{ fontWeight: 800, fontSize: "1rem", color: "#166534" }}>
-              Estado: Período de Prueba Activo (Beta Tester)
+              Estado: {currentSub.status === "active" ? "Suscripción Activa" : "Período de Prueba Activo (Beta Tester)"}
             </div>
             <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
-              Tenés acceso completo a todas las herramientas de Direx sin interrupciones.
+              {currentSub.status === "active"
+                ? "Tu cuenta cuenta con suscripción recurrente activa."
+                : "Tenés acceso completo a todas las herramientas de Direx sin interrupciones."}
             </div>
           </div>
         </div>
-        <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#166534" }}>
-          TRIALING ACTIVO
+        <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#166534", textTransform: "uppercase" }}>
+          {currentSub.status}
         </span>
       </div>
 
       {/* Cupos de Fundador */}
-      {founderSlotsTaken < 10 && (
+      {isFounderAvailable && (
         <div className="card" style={{ backgroundColor: "#faf5ff", borderColor: "#e9d5ff" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#6b21a8" }}>
               <Clock size={18} />
               <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>
-                Cupo Exclusivo de Fundadores: Quedan {10 - founderSlotsTaken} de 10 lugares
+                Cupo Exclusivo de Fundadores: Quedan {10 - (founderSlotsTaken || 0)} de 10 lugares
               </span>
             </div>
             <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#7e22ce" }}>
@@ -129,7 +217,9 @@ export const SubscriptionView: React.FC = () => {
       {/* Tarjetas de Planes */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
         {plans.map(plan => {
-          const isAvailable = plan.id !== "founder" || founderSlotsTaken < 10;
+          const isAvailable = plan.id !== "founder" || isFounderAvailable;
+          const isCurrent = currentSub.planId === plan.id && currentSub.status === "active";
+
           return (
             <div
               key={plan.id}
@@ -173,12 +263,12 @@ export const SubscriptionView: React.FC = () => {
               <div style={{ marginTop: "1.5rem" }}>
                 <Button
                   variant={plan.isFounder ? "primary" : "outline"}
-                  disabled={!isAvailable || isLoading}
+                  disabled={!isAvailable || isLoading || isCurrent}
                   onClick={() => handleSubscribe(plan.id)}
                   style={{ width: "100%", padding: "0.65rem" }}
-                  icon={<ExternalLink size={14} />}
+                  icon={isLoading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
                 >
-                  {isAvailable ? "Suscribirse con Mercado Pago" : "Cupo Agotado"}
+                  {isCurrent ? "Plan Actual" : isAvailable ? "Suscribirse con Mercado Pago" : "Cupo Agotado"}
                 </Button>
               </div>
             </div>
