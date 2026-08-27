@@ -1,14 +1,58 @@
 ﻿import React, { useState } from 'react';
-import { Settings, Building, Users, RefreshCw, Key, Shield } from 'lucide-react';
+import { Settings, Building, Users, RefreshCw, Key, Shield, AlertCircle, UserPlus, ShieldAlert } from 'lucide-react';
+import { PlanLimitsService } from '../../lib/subscription/planLimits';
+import { supabase } from '../../lib/supabase/client';
 import { useOrg } from '../../context/OrgContext';
 import { Button } from '../ui/Button';
 
 export const SettingsView: React.FC = () => {
-  const { currentOrg, resetDemoData, createNewOrganization } = useOrg();
+  const { currentOrg, resetDemoData, createNewOrganization, currentUser } = useOrg();
   const [newOrgName, setNewOrgName] = useState('');
   const [newTaxId, setNewTaxId] = useState('');
   const [newIndustry, setNewIndustry] = useState('');
   const [isCreated, setIsCreated] = useState(false);
+  const [currentPlanId, setCurrentPlanId] = useState<string>("founder");
+  const [subStatus, setSubStatus] = useState<string>("trialing");
+  const [membersCount, setMembersCount] = useState<number>(1);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
+  const [inviteMsg, setInviteMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!currentOrg?.id) return;
+    let isMounted = true;
+    async function loadPlanAndMembers() {
+      try {
+        if (supabase) {
+          // Consultar suscripción
+          const { data: subData } = await supabase
+            .from("organization_subscriptions")
+            .select("plan_id, status")
+            .eq("organization_id", currentOrg?.id || "")
+            .maybeSingle();
+
+          if (isMounted && subData) {
+            setCurrentPlanId(subData.plan_id || "founder");
+            setSubStatus(subData.status || "trialing");
+          }
+
+          // Consultar conteo de miembros
+          const { count } = await supabase
+            .from("organization_members")
+            .select("id", { count: "exact", head: true })
+            .eq("organization_id", currentOrg?.id || "");
+
+          if (isMounted && typeof count === "number") {
+            setMembersCount(count);
+          }
+        }
+      } catch (_e) {}
+    }
+    loadPlanAndMembers();
+    return () => { isMounted = false; };
+  }, [currentOrg?.id]);
+
+  const memberLimitCheck = PlanLimitsService.canAddMember(membersCount, currentPlanId, subStatus);
 
   const handleCreateNewOrg = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +84,73 @@ export const SettingsView: React.FC = () => {
           <div><strong>Moneda Operativa:</strong> {currentOrg?.currency} ({currentOrg?.currencySymbol})</div>
           <div><strong>ID Organización:</strong> <code>{currentOrg?.id}</code></div>
         </div>
+      </div>
+
+      {/* Miembros del Equipo y Límites del Plan */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Users size={18} style={{ color: 'var(--color-primary)' }} />
+            Miembros del Equipo
+          </h3>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-full)', backgroundColor: memberLimitCheck.allowed ? '#dcfce7' : '#fee2e2', color: memberLimitCheck.allowed ? '#166534' : '#991b1b' }}>
+            {membersCount} de {memberLimitCheck.maxAllowed} usuarios
+          </span>
+        </div>
+
+        <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+          Administrá el acceso a la empresa según las cuotas incluidas en tu plan.
+        </p>
+
+        {!memberLimitCheck.allowed && (
+          <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>{memberLimitCheck.reason}</span>
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!memberLimitCheck.allowed) return;
+            setInviteMsg({ type: 'success', text: 'Invitación enviada a ' + inviteEmail });
+            setInviteEmail('');
+          }}
+          style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}
+        >
+          <input
+            type="email"
+            placeholder="colaborador@empresa.com"
+            value={inviteEmail}
+            onChange={e => setInviteEmail(e.target.value)}
+            disabled={!memberLimitCheck.allowed}
+            style={{ flex: 1, minWidth: '220px', padding: '0.5rem', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem' }}
+          />
+          <select
+            value={inviteRole}
+            onChange={e => setInviteRole(e.target.value as any)}
+            disabled={!memberLimitCheck.allowed}
+            style={{ padding: '0.5rem', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem' }}
+          >
+            <option value="member">Miembro Operativo</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={!memberLimitCheck.allowed || !inviteEmail.trim()}
+            icon={<UserPlus size={14} />}
+          >
+            Invitar Miembro
+          </Button>
+        </form>
+
+        {inviteMsg && (
+          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: inviteMsg.type === 'success' ? '#166534' : '#991b1b', fontWeight: 600 }}>
+            {inviteMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Multi-tenant Org Switcher / Creator */}
