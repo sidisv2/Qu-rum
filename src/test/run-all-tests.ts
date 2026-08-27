@@ -9,19 +9,39 @@ import { runTasksDocumentsTestSuite } from "../lib/tasks-documents/__tests__/tas
 import { runE2EFullAuditSuite } from "../lib/e2e-audit/__tests__/e2eFullWorkflow.test";
 import { runDirectorSecurityTestSuite } from "../lib/intelligence/__tests__/directorSecurity.test";
 import { runProductionSecurityTestSuite } from "../lib/security/__tests__/productionSecurity.test";
+import { OrganizationStore } from "../lib/db/orgStore";
+import { resetStorageRepository } from "../lib/storage";
+
+function resetTestEnvironment() {
+  OrganizationStore.clearStore();
+  resetStorageRepository();
+}
 
 async function main() {
+  resetTestEnvironment();
   const p1 = runValidationSuite();
+  resetTestEnvironment();
   const p2 = await runIntelligenceTestSuite();
+  resetTestEnvironment();
   const p3 = await runRepositoryTestSuite();
+  resetTestEnvironment();
   const p4 = await runAuthTestSuite();
+  resetTestEnvironment();
   const p5 = await runMasterModulesTestSuite();
+  resetTestEnvironment();
   const p6 = await runFinancialModulesTestSuite();
+  resetTestEnvironment();
   const p7 = await runPaymentsTestSuite();
+  resetTestEnvironment();
   const p8 = await runTasksDocumentsTestSuite();
+  resetTestEnvironment();
   const p9 = await runE2EFullAuditSuite();
+  resetTestEnvironment();
   const p10 = await runDirectorSecurityTestSuite();
+  resetTestEnvironment();
   const p11 = await runProductionSecurityTestSuite();
+  resetTestEnvironment();
+
   if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6 || !p7 || !p8 || !p9 || !p10 || !p11) {
     process.exit(1);
   }

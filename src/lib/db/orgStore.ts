@@ -202,4 +202,15 @@ export class OrganizationStore {
     safeStorage.removeItem(STORAGE_PREFIX + orgId);
     return this.loadOrgState(orgId);
   }
+
+  public static clearStore(): void {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.clear();
+      } catch {}
+    }
+    for (const k of Object.keys(memoryStore)) {
+      delete memoryStore[k];
+    }
+  }
 }

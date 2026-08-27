@@ -34,3 +34,7 @@ export function getStorageRepository(forceLocal: boolean = false): IStorageRepos
 export * from "./types";
 export * from "./supabaseStorage";
 export * from "./localStorage";
+
+export function resetStorageRepository(): void {
+  storageRepoInstance = null;
+}

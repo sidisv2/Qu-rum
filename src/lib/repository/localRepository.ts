@@ -38,18 +38,17 @@ export class LocalRepository implements IDataRepository {
   }
 
   async createOrganization(org: Omit<Organization, "id" | "createdAt">): Promise<Organization> {
+    const orgId = "org-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
     const newOrg: Organization = {
       ...org,
-      id: "org-" + Date.now(),
+      id: orgId,
       createdAt: new Date().toISOString()
     };
     const cur = OrganizationStore.loadState();
-    const next: AppState = {
-      ...cur,
-      currentOrg: newOrg,
-      organizations: [newOrg, ...cur.organizations]
-    };
-    this.saveState(next);
+    const newOrgState = OrganizationStore.getEmptyOrgState(orgId, newOrg.name);
+    newOrgState.currentOrg = newOrg;
+    newOrgState.organizations = [newOrg, ...(cur.organizations || [])];
+    OrganizationStore.saveState(newOrgState);
     return newOrg;
   }
 
