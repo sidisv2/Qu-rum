@@ -155,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {};
     }
 
-    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://quorum-psi-three.vercel.app/";
+    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://direx.online/";
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resetPassword = async (email: string): Promise<{ error?: string }> => {
     if (!supabase) return {};
-    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://quorum-psi-three.vercel.app/";
+    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://direx.online/";
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl
     });

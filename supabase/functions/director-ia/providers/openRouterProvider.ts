@@ -38,7 +38,7 @@ ${request.userPrompt}
         headers: {
           "Authorization": `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://direx.app",
+          "HTTP-Referer": "https://direx.online",
           "X-Title": "Direx AI Director"
         },
         body: JSON.stringify({
