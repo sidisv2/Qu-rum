@@ -22,7 +22,9 @@ interface CurrentSubscription {
 
 export const SubscriptionView: React.FC = () => {
   const { currentOrg } = useOrg();
-  const [founderSlotsTaken, setFounderSlotsTaken] = useState<number>(5);
+  const MARKETING_FOUNDER_OFFSET = 5; // Base fija de 5 cupos tomados
+  const TOTAL_FOUNDER_SLOTS = 10;
+  const [realFounderCount, setRealFounderCount] = useState<number>(0);
   const [currentSub, setCurrentSub] = useState<CurrentSubscription>({
     planId: "founder",
     status: "trialing",
@@ -87,12 +89,12 @@ export const SubscriptionView: React.FC = () => {
           try {
             const { data: slots, error: slotsErr } = await supabase.rpc("get_founder_slots_count");
             if (!slotsErr && typeof slots === "number") {
-              setFounderSlotsTaken(slots);
+              setRealFounderCount(slots);
             } else {
-              setFounderSlotsTaken(0);
+              setRealFounderCount(0);
             }
           } catch (_rpcErr) {
-            setFounderSlotsTaken(0);
+            setRealFounderCount(0);
           }
 
           // 2. Consultar suscripción actual
@@ -170,7 +172,9 @@ export const SubscriptionView: React.FC = () => {
     }
   };
 
-  const isFounderAvailable = founderSlotsTaken === null || founderSlotsTaken < 10;
+  const effectiveTaken = MARKETING_FOUNDER_OFFSET + realFounderCount;
+  const slotsRemaining = Math.max(0, TOTAL_FOUNDER_SLOTS - effectiveTaken);
+  const isFounderAvailable = slotsRemaining > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -220,7 +224,7 @@ export const SubscriptionView: React.FC = () => {
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#6b21a8" }}>
               <Clock size={18} />
               <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>
-                Cupo Exclusivo de Fundadores: Quedan {10 - (founderSlotsTaken || 0)} de 10 lugares
+                Cupo Exclusivo de Fundadores: Quedan {slotsRemaining} de {TOTAL_FOUNDER_SLOTS} lugares
               </span>
             </div>
             <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#7e22ce" }}>
