@@ -1,0 +1,26 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="direxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.7" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Fondo redondeado elegante con sombra interna y color corporativo Direx -->
+  <rect width="512" height="512" rx="128" fill="#0f172a" />
+  
+  <!-- Borde perimetral sutil -->
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="url(#direxGrad)" stroke-width="12" stroke-opacity="0.4" />
+  
+  <!-- Isotipo 'D' Direx: Geometría moderna de alto impacto -->
+  <path d="M140 110 H260 C360 110, 420 170, 420 256 C420 342, 360 402, 260 402 H140 Z" fill="none" stroke="url(#direxGrad)" stroke-width="52" stroke-linejoin="round" stroke-linecap="round" />
+  
+  <!-- Núcleo de precisión inteligente: Línea de columna y acento -->
+  <circle cx="256" cy="256" r="28" fill="#38bdf8" />
+  <path d="M195 190 V322" stroke="url(#glowGrad)" stroke-width="32" stroke-linecap="round" />
+</svg>
