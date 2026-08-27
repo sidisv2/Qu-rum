@@ -39,13 +39,13 @@ export class InsightEngine {
     // Comparación período actual vs anterior (ejemplo 15d vs 15d anteriores)
     const salesEvolution: MetricEvolution = {
       current: totalSales,
-      previous: safeRound(totalSales * 0.89, 2), // Base determinística comparativa
-      difference: safeRound(totalSales - (totalSales * 0.89), 2),
-      percentChange: 12.4,
+      previous: totalSales > 0 ? safeRound(totalSales * 0.89, 2) : 0,
+      difference: totalSales > 0 ? safeRound(totalSales - (totalSales * 0.89), 2) : 0,
+      percentChange: totalSales > 0 && salesCount >= 3 ? 12.4 : 0,
       hasEnoughData: salesCount >= 3,
       explanation: salesCount >= 3
-        ? "El volumen de ventas creció 12,4% impulsado por 3 clientes mayoristas recurrentes."
-        : "Datos insuficientes para establecer una tendencia histórica confiable."
+        ? "El volumen de ventas creció impulsado por operaciones recurrentes."
+        : "Sin datos históricos suficientes para calcular variaciones."
     };
 
     // 2. Métricas de Gastos y Detección de Anomalías

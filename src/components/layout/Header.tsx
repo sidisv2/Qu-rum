@@ -19,15 +19,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login");
 
-  const [notifications, setNotifications] = useState<any[]>([
-    {
-      id: "1",
-      title: "Cobro pendiente prioritario",
-      message: "Construcciones Norte S.A. tiene un saldo de $4.500.000 vencido.",
-      isRead: false,
-      createdAt: new Date().toISOString()
-    }
-  ]);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   const markAllNotificationsAsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));

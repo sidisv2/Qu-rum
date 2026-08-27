@@ -132,7 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             title="Ventas del período"
             value={formatCurrency(salesMetrics.totalSales, currentOrg?.currency, currentOrg?.currencySymbol)}
             subtitle={salesMetrics.salesCount + " operaciones (Ticket prom: " + formatCurrency(salesMetrics.averageTicket) + ")"}
-            trend={{ value: salesMetrics.evolution.percentChange + "% vs mes anterior", isPositive: true }}
+            trend={salesMetrics.evolution.hasEnoughData ? { value: salesMetrics.evolution.percentChange + "% vs mes anterior", isPositive: salesMetrics.evolution.percentChange >= 0 } : undefined}
             statusColor="primary"
             icon={<TrendingUp size={20} />}
             actionText="Ver ventas"
@@ -142,10 +142,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onClick={() => setExplanationMetric({
               title: "Ventas del Período",
               explanation: salesMetrics.evolution.explanation,
-              factors: [
-                { name: "Ferretería Central", impact: "+$320.000 (Mayorista)" },
-                { name: "Distribuidora Sur", impact: "+$180.000 (Reposición)" },
-                { name: "Otros Clientes", impact: "+$85.000" }
+              factors: salesMetrics.totalSales > 0 ? [
+                { name: "Ventas del período", impact: formatCurrency(salesMetrics.totalSales) }
+              ] : [
+                { name: "Sin registros", impact: "$0" }
               ]
             })}
             style={{
@@ -173,7 +173,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <MetricCard
             title="Gastos totales"
             value={formatCurrency(expensesMetrics.totalExpenses, currentOrg?.currency, currentOrg?.currencySymbol)}
-            subtitle="Mayor costo: Combustible e Insumos"
+            subtitle={expensesMetrics.totalExpenses > 0 ? "Gastos operativos registrados" : "Sin gastos registrados"}
             statusColor="warning"
             icon={<Receipt size={20} />}
             actionText="Ver gastos"
@@ -182,11 +182,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             onClick={() => setExplanationMetric({
               title: "Estructura de Gastos",
-              explanation: "Se detectó un incremento del 18% en Combustible por ampliación de zonas logísticas.",
-              factors: [
-                { name: "Combustible", impact: "+18% ($195.000)" },
-                { name: "Insumos", impact: "+4% ($210.000)" }
-              ]
+              explanation: expensesMetrics.totalExpenses > 0 ? "Desglose de gastos operativos por categoría." : "No se registraron gastos en el período.",
+              factors: expensesMetrics.totalExpenses > 0 ? Object.entries(expensesMetrics.byCategory).map(([k, v]) => ({ name: k, impact: formatCurrency(v) })) : [{ name: "Sin gastos", impact: "$0" }]
             })}
             style={{
               position: "absolute",
