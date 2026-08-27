@@ -53,7 +53,7 @@ ${request.userPrompt}
               content: fullPrompt
             }
           ],
-          temperature: 0.2
+          temperature: 0.6
         }),
         signal: controller.signal
       });

@@ -16,6 +16,7 @@ import { Drawer } from "../ui/Drawer";
 import { InsightEngine } from "../../lib/intelligence/insightEngine";
 import { BusinessInsight } from "../../lib/intelligence/types";
 import { useToast } from "../ui/Toast";
+import { OnboardingGuide } from "../onboarding/OnboardingGuide";
 
 interface DashboardViewProps {
   onNavigateToSection: (section: any) => void;
@@ -124,6 +125,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Guía interactiva de Onboarding para cuentas nuevas (< 3 operaciones) */}
+      <OnboardingGuide
+        onNavigateToSection={onNavigateToSection}
+        salesCount={sales.length}
+        expensesCount={expenses.length}
+      />
 
       {/* 2. Cuadrante de KPIs con "¿Por qué cambió?" */}
       <div className="grid grid-cols-4 lg-grid-cols-2 md-grid-cols-1" style={{ gap: "1rem" }}>
