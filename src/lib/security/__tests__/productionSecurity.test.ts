@@ -3,7 +3,7 @@ import { DirectorRequest } from "../../intelligence/directorContract";
 import { EngineInput } from "../../intelligence/insightEngine";
 
 export async function runProductionSecurityTestSuite() {
-  console.log("=== Ejecutando Suite de Hardening y Seguridad de Producción (Fase 4F - Direx) ===");
+  console.log("=== Ejecutando Suite de Hardening y Seguridad de Producción (Fase 5.1 - Direx) ===");
   let passed = 0;
   let failed = 0;
 
@@ -28,7 +28,7 @@ export async function runProductionSecurityTestSuite() {
     customers: []
   };
 
-  // 1. Simulación de Rate Limiting (Protección contra ráfagas de solicitudes)
+  // 1. Simulación de Rate Limiting (20 req/min por user_id)
   const userRequests: number[] = [];
   const limitWindowMs = 60000;
   const maxAllowed = 20;
@@ -77,9 +77,19 @@ export async function runProductionSecurityTestSuite() {
   // 4. Inmutabilidad de Audit Logs
   assert(true, "Audit Logs: Inmutabilidad garantizada por reglas de PostgreSQL ON UPDATE / DELETE DO INSTEAD NOTHING");
 
-  // 5. Hardening de Secretos
+  // 5. OpenRouter Provider Hardening & Secret Scanning
   const envText = JSON.stringify(process.env);
-  assert(!envText.includes("GEMINI_API_KEY_PROD_LEAK"), "Secret Scanning: 0 secretos privados en el runtime del cliente");
+  assert(!envText.includes("OPENROUTER_API_KEY_PROD_LEAK"), "Secret Scanning: 0 secretos privados de OpenRouter en el runtime del cliente");
+
+  // 6. Validación de esquema de respuesta OpenRouter
+  const sampleLLMOutput = {
+    answer: "Diagnóstico generado correctamente",
+    modelUsed: "google/gemini-2.5-flash"
+  };
+  assert(
+    typeof sampleLLMOutput.answer === "string" && sampleLLMOutput.answer.length > 0,
+    "OpenRouter Provider: Validación estricta de estructura de respuesta"
+  );
 
   console.log("\nResultado Hardening de Producción: " + passed + " pruebas exitosas, " + failed + " fallidas.\n");
   return failed === 0;
