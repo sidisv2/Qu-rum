@@ -20,7 +20,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Sparkles,
-  Activity
+  Activity,
+  CreditCard
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 
@@ -41,6 +42,7 @@ export type NavSection =
   | "analysis"
   | "director-ia"
   | "import-csv"
+  | "subscription"
   | "beta-monitoring"
   | "audit"
   | "settings";
@@ -125,6 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       label: "Configuración",
       items: [
+        { id: "subscription", label: "Mi Plan", icon: <CreditCard size={17} /> },
         { id: "import-csv", label: "Importar CSV", icon: <UploadCloud size={17} /> },
         { id: "beta-monitoring", label: "Monitoreo Beta", icon: <Activity size={17} /> },
         { id: "audit", label: "Auditoría", icon: <ShieldCheck size={17} /> },
