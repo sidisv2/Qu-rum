@@ -314,11 +314,13 @@ export const SubscriptionView: React.FC = () => {
         </div>
       )}
 
-      {/* Tarjetas de Planes */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
-        {plans.map(plan => {
-          const isAvailable = plan.id !== "founder" || isFounderAvailable;
-          const isCurrent = currentSub.planId === plan.id && currentSub.status === "active";
+      {/* Tarjetas de Planes (Oculta Plan Fundador si no hay cupos disponibles) */}
+      <div style={{ display: "grid", gridTemplateColumns: isFounderAvailable ? "repeat(auto-fit, minmax(280px, 1fr))" : "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.25rem" }}>
+        {plans
+          .filter(plan => plan.id !== "founder" || isFounderAvailable)
+          .map(plan => {
+            const isAvailable = true;
+            const isCurrent = currentSub.planId === plan.id && currentSub.status === "active";
 
           return (
             <div

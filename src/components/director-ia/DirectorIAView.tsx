@@ -19,7 +19,7 @@ import { DirectorAIService } from "../../lib/intelligence/directorAIService";
 import { BusinessInsight } from "../../lib/intelligence/types";
 import { PlanLimitsService } from "../../lib/subscription/planLimits";
 import { supabase } from "../../lib/supabase/client";
-import { ExternalLink, Clock } from "lucide-react";
+import { ExternalLink, Clock, ArrowRight, ShieldAlert } from "lucide-react";
 
 export const DirectorIAView: React.FC = () => {
   const {
@@ -351,15 +351,60 @@ export const DirectorIAView: React.FC = () => {
                   maxWidth: "88%",
                   padding: "0.85rem 1.1rem",
                   borderRadius: "var(--radius-lg)",
-                  backgroundColor: m.sender === "user" ? "var(--color-primary)" : "var(--color-bg-base)",
-                  color: m.sender === "user" ? "#ffffff" : "var(--color-text-primary)",
+                  backgroundColor: m.sender === "user"
+                    ? "var(--color-primary)"
+                    : m.text.includes("Alcanzaste el límite") || m.text.includes("período de prueba de 7 días ha finalizado")
+                    ? "#fef2f2"
+                    : "var(--color-bg-base)",
+                  color: m.sender === "user"
+                    ? "#ffffff"
+                    : m.text.includes("Alcanzaste el límite") || m.text.includes("período de prueba de 7 días ha finalizado")
+                    ? "#991b1b"
+                    : "var(--color-text-primary)",
                   fontSize: "0.875rem",
                   lineHeight: 1.5,
                   whiteSpace: "pre-wrap",
-                  border: m.sender === "user" ? "none" : "1px solid var(--color-border-subtle)"
+                  border: m.sender === "user"
+                    ? "none"
+                    : m.text.includes("Alcanzaste el límite") || m.text.includes("período de prueba de 7 días ha finalizado")
+                    ? "1.5px solid #fecaca"
+                    : "1px solid var(--color-border-subtle)",
+                  boxShadow: (m.text.includes("Alcanzaste el límite") || m.text.includes("período de prueba de 7 días ha finalizado"))
+                    ? "0 4px 12px rgba(220, 38, 38, 0.08)"
+                    : "none"
                 }}
               >
                 {m.text}
+
+                {/* CTA Interactivo de Upgrade si es mensaje de límite */}
+                {(m.text.includes("Alcanzaste el límite") || m.text.includes("período de prueba de 7 días ha finalizado")) && (
+                  <div style={{ marginTop: "0.85rem", paddingTop: "0.75rem", borderTop: "1px solid #fee2e2" }}>
+                    <a
+                      href="/configuracion/mi-plan"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.history.pushState(null, "", "/configuracion/mi-plan");
+                        window.dispatchEvent(new PopStateEvent("popstate"));
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.4rem",
+                        padding: "0.5rem 0.85rem",
+                        borderRadius: "var(--radius-md, 8px)",
+                        backgroundColor: "#4f46e5",
+                        color: "#ffffff",
+                        fontWeight: 700,
+                        fontSize: "0.8125rem",
+                        textDecoration: "none",
+                        boxShadow: "0 2px 8px rgba(79, 70, 229, 0.25)"
+                      }}
+                    >
+                      <span>Elegir un Plan y Desbloquear Acceso Ilimitado</span>
+                      <ArrowRight size={14} />
+                    </a>
+                  </div>
+                )}
 
                 {m.structuredInsights && m.structuredInsights.length > 0 && (
                   <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--color-border-default)", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
