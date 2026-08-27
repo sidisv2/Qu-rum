@@ -17,4 +17,4 @@
 - **Trazabilidad:** Cada invocación registra duración en milisegundos, usuario, organización y estado en `audit_logs`.
 
 ## 4. CORS Endurecido
-- **Permitidos:** `http://localhost:5173`, `http://127.0.0.1:5173`, `https://direx.app`, `https://quorum-admin-ia.vercel.app`.
+- **Permitidos:** `http://localhost:5173`, `http://127.0.0.1:5173`, `https://direx.app`, `https://quorum-psi-three.vercel.app`.

@@ -6,7 +6,7 @@
 ---
 
 ## 1. Registro e Ingreso
-1. Ingresá al enlace de la aplicación: **[https://quorum-admin-ia.vercel.app](https://quorum-admin-ia.vercel.app)**
+1. Ingresá al enlace de la aplicación: **[https://quorum-psi-three.vercel.app](https://quorum-psi-three.vercel.app)**
 2. Hacé clic en **"Crear Cuenta"** e ingresá tu correo electrónico y una contraseña segura.
 3. Confirmá tu correo si es la primera vez que ingresás.
 

@@ -22,12 +22,25 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const readEnv = (key: string): string => {
+  try {
+    const meta = import.meta as any;
+    if (meta && meta.env && typeof meta.env[key] !== "undefined") {
+      return meta.env[key] || "";
+    }
+  } catch (_e) {
+    // fallback
+  }
+  if (typeof process !== "undefined" && process.env && typeof process.env[key] !== "undefined") {
+    return process.env[key] || "";
+  }
+  return "";
+};
+
 const getDataMode = (): "local" | "supabase" => {
-  const anyMeta = import.meta as any;
-  const envMode = (typeof anyMeta !== "undefined" && anyMeta.env)
-    ? anyMeta.env.VITE_DATA_MODE
-    : (typeof process !== "undefined" && process.env ? process.env.VITE_DATA_MODE : "");
-  return envMode === "supabase" && isSupabaseConfigured() ? "supabase" : "local";
+  const envMode = readEnv("VITE_DATA_MODE");
+  if (envMode === "local") return "local";
+  return isSupabaseConfigured() ? "supabase" : "local";
 };
 
 const LOCAL_DEMO_USER: User = {
@@ -90,49 +103,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => {
-      authListener.subscription.unsubscribe();
+      authListener?.subscription.unsubscribe();
     };
   }, [dataMode]);
 
   const signIn = async (email: string, pass: string): Promise<{ error?: string }> => {
-    if (dataMode === "local") {
+    if (dataMode === "local" || !supabase) {
       setUser(LOCAL_DEMO_USER);
       setSession({ user: LOCAL_DEMO_USER, supabaseUser: null, token: "local-token" });
       return {};
     }
-    if (!supabase) return { error: "Supabase no configurado" };
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) return { error: error.message };
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: pass
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    if (data.user) {
+      const u: User = {
+        id: data.user.id,
+        email: data.user.email || "",
+        fullName: data.user.user_metadata?.full_name || data.user.email?.split("@")[0] || "Usuario",
+        avatarUrl: data.user.user_metadata?.avatar_url || "",
+        createdAt: data.user.created_at
+      };
+      setUser(u);
+      setSession({ user: u, supabaseUser: data.user, token: data.session?.access_token || null });
+    }
+
     return {};
   };
 
-  const signUp = async (email: string, pass: string, fullName: string): Promise<{ error?: string; requiresEmailConfirmation?: boolean }> => {
-    if (dataMode === "local") {
-      const u: User = { ...LOCAL_DEMO_USER, email, fullName };
-      setUser(u);
-      setSession({ user: u, supabaseUser: null, token: "local-token" });
+  const signUp = async (
+    email: string,
+    pass: string,
+    fullName: string
+  ): Promise<{ error?: string; requiresEmailConfirmation?: boolean }> => {
+    if (dataMode === "local" || !supabase) {
+      const newUser: User = {
+        id: "usr-" + Date.now(),
+        email,
+        fullName,
+        createdAt: new Date().toISOString()
+      };
+      setUser(newUser);
+      setSession({ user: newUser, supabaseUser: null, token: "local-token" });
       return {};
     }
-    if (!supabase) return { error: "Supabase no configurado" };
+
+    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://quorum-psi-three.vercel.app/";
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password: pass,
       options: {
-        data: { full_name: fullName }
+        data: {
+          full_name: fullName
+        },
+        emailRedirectTo: redirectUrl
       }
     });
 
-    if (error) return { error: error.message };
-    if (!data.session) {
-      return { requiresEmailConfirmation: true };
+    if (error) {
+      return { error: error.message };
     }
-    return {};
+
+    if (data.session?.user) {
+      const u: User = {
+        id: data.user!.id,
+        email: data.user!.email || "",
+        fullName: fullName,
+        createdAt: data.user!.created_at
+      };
+      setUser(u);
+      setSession({ user: u, supabaseUser: data.user, token: data.session.access_token });
+      return {};
+    }
+
+    // Si requiere confirmación de email
+    return { requiresEmailConfirmation: true };
   };
 
   const signOut = async (): Promise<void> => {
-    if (dataMode === "supabase" && supabase) {
+    if (supabase) {
       await supabase.auth.signOut();
     }
     setUser(null);
@@ -140,11 +197,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetPassword = async (email: string): Promise<{ error?: string }> => {
-    if (dataMode === "local") return {};
-    if (!supabase) return { error: "Supabase no configurado" };
-
-    const redirectUrl = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_AUTH_REDIRECT_URL) || window.location.origin;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+    if (!supabase) return {};
+    const redirectUrl = readEnv("VITE_AUTH_REDIRECT_URL") || "https://quorum-psi-three.vercel.app/";
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl
+    });
     if (error) return { error: error.message };
     return {};
   };
@@ -168,7 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");

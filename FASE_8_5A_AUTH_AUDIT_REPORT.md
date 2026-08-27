@@ -3,7 +3,7 @@
 **Fecha:** 27 de Agosto, 2026  
 **Proyecto Supabase:** `ychqcwbpzmjpsbowzvpk`  
 **Endpoint:** `https://ychqcwbpzmjpsbowzvpk.supabase.co`  
-**Dominio Web:** `https://quorum-admin-ia.vercel.app`  
+**Dominio Web:** `https://quorum-psi-three.vercel.app`  
 
 ---
 
@@ -26,7 +26,7 @@ Los archivos involucrados en la autenticación del cliente son:
 | **Confirmación de Email** | ✅ Implementado | ⚠️ **Activada en Supabase** | Requiere confirmación de email antes del primer login. Si usa el servidor SMTP por defecto de Supabase, está sujeto a una cuota estricta de 3-4 emails por hora. |
 | **Google OAuth** | ❌ No codificado | ❌ No configurado | En la guía de usuario se menciona acceso con Google, pero en el código frontend actual **solo existe Email/Password**. |
 | **Magic Links** | ❌ No codificado | ❌ No configurado | No implementado. |
-| **Redirect URL** | ✅ Implementado | ⚠️ Configuración requerida | En código apunta a `VITE_AUTH_REDIRECT_URL`. En el panel de Supabase debe coincidir con `https://quorum-admin-ia.vercel.app/**`. |
+| **Redirect URL** | ✅ Implementado | ⚠️ Configuración requerida | En código apunta a `VITE_AUTH_REDIRECT_URL`. En el panel de Supabase debe coincidir con `https://quorum-psi-three.vercel.app/**`. |
 
 ---
 

@@ -5,7 +5,7 @@
 **Proyecto:** DIREX — SaaS B2B "Director Administrativo IA para PyMEs"  
 **Project ID Supabase:** `ychqcwbpzmjpsbowzvpk`  
 **URL Producción:** `https://ychqcwbpzmjpsbowzvpk.supabase.co`  
-**Deploy Frontend:** Vercel (`https://quorum-admin-ia.vercel.app` / `https://direx.app`)
+**Deploy Frontend:** Vercel (`https://quorum-psi-three.vercel.app` / `https://direx.app`)
 
 ---
 

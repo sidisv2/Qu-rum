@@ -8,7 +8,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "https://direx.app",
-  "https://quorum-admin-ia.vercel.app"
+  "https://quorum-psi-three.vercel.app"
 ];
 
 function getCorsHeaders(reqOrigin: string | null) {
@@ -120,7 +120,7 @@ serve(async (req) => {
             transaction_amount: Number(plan.price_ars),
             currency_id: "ARS"
           },
-          back_url: backUrl || "https://quorum-admin-ia.vercel.app"
+          back_url: backUrl || "https://quorum-psi-three.vercel.app"
         })
       });
 

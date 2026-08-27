@@ -1,7 +1,7 @@
 ﻿# CHECKLIST DE LANZAMIENTO A PRIMEROS BETA TESTERS — FASE 8 (DIREX)
 
 **Fecha:** 27 de Agosto, 2026  
-**Dominio de Producción:** `https://quorum-admin-ia.vercel.app`  
+**Dominio de Producción:** `https://quorum-psi-three.vercel.app`  
 **Commit de Producción:** `f812208` en `origin/main`  
 **Backend:** Supabase Definitivo (`ychqcwbpzmjpsbowzvpk`) + OpenRouter  
 

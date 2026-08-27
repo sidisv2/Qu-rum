@@ -1,12 +1,10 @@
 ﻿import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { LoginView } from "./LoginView";
-import { RegisterView } from "./RegisterView";
-import { ForgotPasswordView } from "./ForgotPasswordView";
+import { AuthModal } from "./AuthModal";
 
 export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  const [authView, setAuthView] = useState<"login" | "register" | "forgot">("login");
+  const [authModalOpen, setAuthModalOpen] = useState(true);
 
   if (loading) {
     return (
@@ -20,17 +18,14 @@ export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children 
   }
 
   if (!isAuthenticated) {
-    if (authView === "register") {
-      return <RegisterView onNavigateToLogin={() => setAuthView("login")} />;
-    }
-    if (authView === "forgot") {
-      return <ForgotPasswordView onNavigateToLogin={() => setAuthView("login")} />;
-    }
     return (
-      <LoginView
-        onNavigateToRegister={() => setAuthView("register")}
-        onNavigateToForgotPassword={() => setAuthView("forgot")}
-      />
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: "var(--color-bg-base)", padding: "1rem" }}>
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(true)} // Keep open until authenticated when gating full app
+          initialMode="login"
+        />
+      </div>
     );
   }
 

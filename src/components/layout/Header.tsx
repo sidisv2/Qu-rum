@@ -1,39 +1,45 @@
 ﻿import React, { useState } from "react";
-import {
-  Menu,
-  Bell,
-  Search,
-  CheckCircle2,
-  Building,
-  ChevronDown
-} from "lucide-react";
+import { Building, ChevronDown, Bell, CheckCircle2, Menu, LogIn, UserPlus, LogOut, User as UserIcon } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
+import { useAuth } from "../../context/AuthContext";
+import { AuthModal } from "../auth/AuthModal";
 import { NavSection } from "./Sidebar";
 
-export interface HeaderProps {
-  onToggleMobileMenu: () => void;
+interface HeaderProps {
+  onToggleMobileMenu?: () => void;
   onNavigateToSection?: (section: NavSection) => void;
-  onNavigateToIA?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  onToggleMobileMenu,
-  onNavigateToSection,
-  onNavigateToIA
-}) => {
-  const {
-    currentUser,
-    currentOrg,
-    organizations,
-    setCurrentOrg,
-    notifications,
-    markAllNotificationsAsRead
-  } = useOrg();
-
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+export const Header: React.FC<HeaderProps> = ({ onToggleMobileMenu }) => {
+  const { currentOrg, organizations, setCurrentOrg } = useOrg();
+  const { user, isAuthenticated, signOut } = useAuth();
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [authDropdownOpen, setAuthDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login");
+
+  const [notifications, setNotifications] = useState<any[]>([
+    {
+      id: "1",
+      title: "Cobro pendiente prioritario",
+      message: "Construcciones Norte S.A. tiene un saldo de $4.500.000 vencido.",
+      isRead: false,
+      createdAt: new Date().toISOString()
+    }
+  ]);
+
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  const openAuthModal = (mode: "login" | "register") => {
+    setAuthModalMode(mode);
+    setAuthModalOpen(true);
+    setAuthDropdownOpen(false);
+  };
 
   return (
     <header
@@ -230,29 +236,161 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Perfil del Usuario */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <div
-            style={{
-              width: "28px",
-              height: "28px",
-              borderRadius: "50%",
-              backgroundColor: "var(--color-primary)",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "0.75rem",
-              fontWeight: 700
-            }}
-          >
-            {currentUser?.fullName ? currentUser.fullName.charAt(0) : "V"}
-          </div>
-          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-text-primary)" }}>
-            {currentUser?.fullName || "Valentín Morales"}
-          </span>
+        {/* Menú de Autenticación / Perfil */}
+        <div style={{ position: "relative" }}>
+          {isAuthenticated && user ? (
+            <button
+              onClick={() => setAuthDropdownOpen(!authDropdownOpen)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                background: "none",
+                border: "1px solid var(--color-border-default)",
+                padding: "0.3rem 0.6rem",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer"
+              }}
+            >
+              <div
+                style={{
+                  width: "26px",
+                  height: "26px",
+                  borderRadius: "50%",
+                  backgroundColor: "var(--color-primary, #4f46e5)",
+                  color: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.75rem",
+                  fontWeight: 700
+                }}
+              >
+                {user.fullName ? user.fullName.charAt(0).toUpperCase() : "U"}
+              </div>
+              <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-text-primary)" }}>
+                {user.fullName || user.email}
+              </span>
+              <ChevronDown size={12} style={{ color: "var(--color-text-muted)" }} />
+            </button>
+          ) : (
+            <button
+              onClick={() => setAuthDropdownOpen(!authDropdownOpen)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                backgroundColor: "var(--color-primary, #4f46e5)",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.45rem 0.85rem",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer",
+                fontSize: "0.8125rem",
+                fontWeight: 700
+              }}
+            >
+              <UserIcon size={14} />
+              <span>Acceder</span>
+              <ChevronDown size={12} />
+            </button>
+          )}
+
+          {authDropdownOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: "0.4rem",
+                width: "190px",
+                backgroundColor: "#ffffff",
+                border: "1px solid var(--color-border-default)",
+                borderRadius: "var(--radius-md)",
+                boxShadow: "var(--shadow-lg)",
+                zIndex: 100,
+                padding: "0.35rem 0"
+              }}
+            >
+              {isAuthenticated && user ? (
+                <>
+                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: "1px solid var(--color-border-default)", fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
+                    Conectado como<br />
+                    <strong style={{ color: "var(--color-text-primary)" }}>{user.email}</strong>
+                  </div>
+                  <button
+                    onClick={() => { signOut(); setAuthDropdownOpen(false); }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "0.5rem 0.75rem",
+                      border: "none",
+                      background: "none",
+                      fontSize: "0.8125rem",
+                      color: "var(--color-danger, #ef4444)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <LogOut size={14} />
+                    <span>Cerrar sesión</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => openAuthModal("login")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "0.5rem 0.75rem",
+                      border: "none",
+                      background: "none",
+                      fontSize: "0.8125rem",
+                      color: "var(--color-text-primary)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <LogIn size={14} style={{ color: "var(--color-primary, #4f46e5)" }} />
+                    <span>Iniciar sesión</span>
+                  </button>
+                  <button
+                    onClick={() => openAuthModal("register")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "0.5rem 0.75rem",
+                      border: "none",
+                      background: "none",
+                      fontSize: "0.8125rem",
+                      color: "var(--color-text-primary)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <UserPlus size={14} style={{ color: "#16a34a" }} />
+                    <span>Crear cuenta</span>
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal de Autenticación */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialMode={authModalMode}
+      />
     </header>
   );
 };

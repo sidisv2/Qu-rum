@@ -42,7 +42,7 @@
 ---
 
 ## 5. Guía Rápida para Invitar a los Primeros Beta Testers (3-5 PyMEs)
-1. **Acceso:** Indicarles ingresar a `https://quorum-admin-ia.vercel.app` o su dominio de producción.
+1. **Acceso:** Indicarles ingresar a `https://quorum-psi-three.vercel.app` o su dominio de producción.
 2. **Registro:** Crear cuenta con Email/Password (o Google Auth).
 3. **Onboarding:** Completar nombre de empresa y rubro en el asistente inicial.
 4. **Carga Inicial:** Importar clientes y productos vía CSV o activar "Modo Demo" para una primera exploración.
