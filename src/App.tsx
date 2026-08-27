@@ -26,6 +26,7 @@ import { SettingsView } from "./components/settings/SettingsView";
 import { SmartCollectionsView } from "./components/collections/SmartCollectionsView";
 import { BetaMonitoringView } from "./components/monitoring/BetaMonitoringView";
 import { SubscriptionView } from "./components/subscription/SubscriptionView";
+import { SupportView } from "./components/support/SupportView";
 import { FeedbackWidget } from "./components/feedback/FeedbackWidget";
 
 // Simple robust Error Boundary
@@ -149,6 +150,8 @@ export const AppContent: React.FC = () => {
         return <ImportCSVView />;
       case "subscription":
         return <SubscriptionView />;
+      case "support":
+        return <SupportView />;
       case "beta-monitoring":
         return <BetaMonitoringView />;
       case "audit":

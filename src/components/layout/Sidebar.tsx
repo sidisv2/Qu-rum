@@ -1,5 +1,6 @@
 ﻿import React from "react";
 import {
+  LifeBuoy,
   LayoutDashboard,
   CalendarCheck,
   TrendingUp,
@@ -46,7 +47,8 @@ export type NavSection =
   | "subscription"
   | "beta-monitoring"
   | "audit"
-  | "settings";
+  | "settings"
+  | "support";
 
 interface NavItem {
   id: NavSection;

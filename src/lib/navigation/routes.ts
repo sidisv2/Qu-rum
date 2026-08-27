@@ -20,7 +20,8 @@ export const SECTION_TO_PATH: Record<NavSection, string> = {
   "import-csv": "/configuracion/importar-csv",
   "beta-monitoring": "/configuracion/monitoreo-beta",
   "audit": "/configuracion/auditoria",
-  "settings": "/configuracion/empresa"
+  "settings": "/configuracion/empresa",
+  "support": "/soporte"
 };
 
 export const PATH_TO_SECTION: Record<string, NavSection> = Object.entries(SECTION_TO_PATH).reduce(
@@ -37,7 +38,9 @@ export const PATH_TO_SECTION: Record<string, NavSection> = Object.entries(SECTIO
     "/gastos": "expenses",
     "/director-ia": "director-ia",
     "/subscription": "subscription",
-    "/pricing": "subscription"
+    "/pricing": "subscription",
+    "/soporte": "support",
+    "/ayuda": "support"
   } as Record<string, NavSection>
 );
 
