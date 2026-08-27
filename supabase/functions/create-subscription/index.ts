@@ -90,7 +90,8 @@ serve(async (req) => {
     if (planId === "founder") {
       try {
         const { data: count } = await supabaseClient.rpc("get_founder_slots_count");
-        if (typeof count === "number" && count >= 10) {
+        const effectiveSlots = (typeof count === "number" ? count : 0) + 5;
+        if (effectiveSlots >= 10) {
           return new Response(JSON.stringify({ error: "El cupo de 10 clientes Fundadores se encuentra agotado" }), { status: 400, headers: corsHeaders });
         }
       } catch (_e) {

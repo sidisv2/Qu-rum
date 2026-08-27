@@ -22,7 +22,7 @@ interface CurrentSubscription {
 
 export const SubscriptionView: React.FC = () => {
   const { currentOrg } = useOrg();
-  const [founderSlotsTaken, setFounderSlotsTaken] = useState<number | null>(null);
+  const [founderSlotsTaken, setFounderSlotsTaken] = useState<number>(5);
   const [currentSub, setCurrentSub] = useState<CurrentSubscription>({
     planId: "founder",
     status: "trialing",
