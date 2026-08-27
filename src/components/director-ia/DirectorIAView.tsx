@@ -17,6 +17,9 @@ import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer";
 import { DirectorAIService } from "../../lib/intelligence/directorAIService";
 import { BusinessInsight } from "../../lib/intelligence/types";
+import { PlanLimitsService } from "../../lib/subscription/planLimits";
+import { supabase } from "../../lib/supabase/client";
+import { ExternalLink, Clock } from "lucide-react";
 
 export const DirectorIAView: React.FC = () => {
   const {
@@ -31,6 +34,8 @@ export const DirectorIAView: React.FC = () => {
   } = useOrg();
 
   const { user } = useAuth();
+  const [currentPlanId, setCurrentPlanId] = useState<string>("founder");
+  const [subStatus, setSubStatus] = useState<string>("trialing");
   const userName = user?.fullName?.split(" ")[0] || "Director";
   const defaultWelcome = "Hola " + userName + ". Analicé las finanzas y operaciones de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy.";
 
@@ -40,6 +45,35 @@ export const DirectorIAView: React.FC = () => {
       text: defaultWelcome
     }
   ]);
+
+  useEffect(() => {
+    if (!currentOrg?.id || !supabase) return;
+    async function loadOrgSubscription() {
+      try {
+        if (!supabase) return;
+        const { data: subData } = await supabase
+          .from("organization_subscriptions")
+          .select("plan_id, status")
+          .eq("organization_id", currentOrg?.id || "")
+          .maybeSingle();
+
+        if (subData) {
+          setCurrentPlanId(subData.plan_id || "founder");
+          setSubStatus(subData.status || "trialing");
+        }
+      } catch (_e) {}
+    }
+    loadOrgSubscription();
+  }, [currentOrg?.id]);
+
+  // Contar consultas enviadas por el usuario
+  const userQueriesCount = useMemo(() => {
+    return messages.filter(m => m.sender === "user").length;
+  }, [messages]);
+
+  const quotaCheck = useMemo(() => {
+    return PlanLimitsService.canQueryAI(userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt);
+  }, [userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [evidenceInsight, setEvidenceInsight] = useState<BusinessInsight | null>(null);
@@ -97,6 +131,17 @@ export const DirectorIAView: React.FC = () => {
   const handleSend = async (queryText?: string) => {
     const q = queryText || inputText;
     if (!q.trim() || isLoading) return;
+
+    if (!quotaCheck.allowed) {
+      const blockMsg = quotaCheck.reason || "Alcanzaste el límite de consultas de tu plan actual. Mejorá a un plan superior para continuar.";
+      setMessages(prev => [
+        ...prev,
+        { sender: "user", text: q },
+        { sender: "ia", text: blockMsg }
+      ]);
+      setInputText("");
+      return;
+    }
 
     setMessages(prev => [...prev, { sender: "user", text: q }]);
     setInputText("");

@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from "react";
 import { CreditCard, Check, Sparkles, Clock, AlertCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
+import { PlanLimitsService } from "../../lib/subscription/planLimits";
 import { supabase } from "../../lib/supabase/client";
 import { Button } from "../ui/Button";
 
@@ -198,24 +199,72 @@ export const SubscriptionView: React.FC = () => {
       )}
 
       {/* Estado Actual del Tenant */}
-      <div className="card" style={{ backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <Sparkles size={24} style={{ color: "#16a34a" }} />
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "1rem", color: "#166534" }}>
-              Estado: {currentSub.status === "active" ? "Suscripción Activa" : "Período de Prueba Activo (Beta Tester)"}
+      {(() => {
+        const isTrial = currentSub.status === "trialing" || currentSub.status === "none";
+        const trialDays = PlanLimitsService.getTrialDaysRemaining(currentOrg?.createdAt);
+        const isExpired = isTrial && trialDays <= 0;
+
+        if (currentSub.status === "active") {
+          return (
+            <div className="card" style={{ backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <Sparkles size={24} style={{ color: "#16a34a" }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "1rem", color: "#166534" }}>
+                    Estado: Suscripción Activa ({currentSub.planId.toUpperCase()})
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
+                    Tu empresa cuenta con acceso ilimitado al Director IA y cobros inteligentes.
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#166534", textTransform: "uppercase" }}>
+                ACTIVO
+              </span>
             </div>
-            <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
-              {currentSub.status === "active"
-                ? "Tu cuenta cuenta con suscripción recurrente activa."
-                : "Tenés acceso completo a todas las herramientas de Direx sin interrupciones."}
+          );
+        }
+
+        if (isExpired) {
+          return (
+            <div className="card" style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <AlertCircle size={24} style={{ color: "#dc2626" }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "1rem", color: "#991b1b" }}>
+                    Estado: Período de Prueba Expirado (EXPIRED)
+                  </div>
+                  <div style={{ fontSize: "0.8125rem", color: "#b91c1c" }}>
+                    Tu período de prueba de 7 días ha finalizado. Elegí un plan para reactivar tu Director IA y sumar a tu equipo.
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#fee2e2", color: "#991b1b", textTransform: "uppercase" }}>
+                EXPIRADO
+              </span>
             </div>
+          );
+        }
+
+        return (
+          <div className="card" style={{ backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <Clock size={24} style={{ color: "#16a34a" }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "1rem", color: "#166534" }}>
+                  Estado: Plan de Prueba (Free)
+                </div>
+                <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
+                  Te quedan {trialDays} días de prueba y 10 consultas de Director IA. Elegí tu plan para desbloquear acceso ilimitado y sumar a tu equipo.
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#166534", textTransform: "uppercase" }}>
+              TRIAL ({trialDays} DÍAS)
+            </span>
           </div>
-        </div>
-        <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.6rem", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#166534", textTransform: "uppercase" }}>
-          {currentSub.status}
-        </span>
-      </div>
+        );
+      })()}
 
       {/* Cupos de Fundador */}
       {isFounderAvailable && (

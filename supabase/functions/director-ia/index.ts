@@ -122,6 +122,34 @@ serve(async (req) => {
       targetOrgId = userOrgIds[0];
     }
 
+    // 4.1 Validar cuota del Plan Trialing en la base de datos
+    const { data: orgSub } = await supabaseClient
+      .from("organization_subscriptions")
+      .select("plan_id, status")
+      .eq("organization_id", targetOrgId)
+      .maybeSingle();
+
+    const subStatus = orgSub?.status || "trialing";
+    if (subStatus === "trialing") {
+      const { count: aiMsgCount } = await supabaseClient
+        .from("ai_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", targetOrgId)
+        .eq("sender", "user");
+
+      if (typeof aiMsgCount === "number" && aiMsgCount >= 10) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "TRIAL_LIMIT_EXCEEDED",
+              message: "Alcanzaste el límite de 10 consultas de prueba en tu Plan Free. Suscribite al Plan Fundador en /configuracion/mi-plan para acceso ilimitado."
+            }
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json", "X-Request-ID": requestId } }
+        );
+      }
+    }
+
     // 5. Agregaciones financieras seguras con RLS
     const { data: sales } = await supabaseClient.from("sales").select("total, status").eq("organization_id", targetOrgId);
     const { data: expenses } = await supabaseClient.from("expenses").select("amount, category").eq("organization_id", targetOrgId);
