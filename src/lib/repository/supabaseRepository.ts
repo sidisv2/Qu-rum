@@ -57,9 +57,33 @@ export class SupabaseRepository implements IDataRepository {
     };
   }
 
-  async createOrganization(org: Omit<Organization, "id" | "createdAt">): Promise<Organization> {
+    async createOrganization(org: Omit<Organization, "id" | "createdAt">): Promise<Organization> {
     this.checkClient();
-    const { data, error } = await supabase!.from("organizations").insert({
+    
+    // Invocar Edge Function transaccional que crea organization y asigna rol Owner
+    const { data, error } = await supabase!.functions.invoke("create-organization", {
+      body: {
+        name: org.name,
+        taxId: org.taxId,
+        industry: org.industry,
+        currency: org.currency || "ARS"
+      }
+    });
+
+    if (error) {
+      throw new Error(error.message || "Error al crear la organización");
+    }
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+
+    if (data?.organization) {
+      return data.organization;
+    }
+
+    // Fallback directo
+    const { data: directData, error: directError } = await supabase!.from("organizations").insert({
       name: org.name,
       tax_id: org.taxId,
       currency: org.currency || "ARS",
@@ -67,16 +91,16 @@ export class SupabaseRepository implements IDataRepository {
       is_demo: org.isDemo || false
     }).select().single();
 
-    if (error) throw error;
+    if (directError) throw directError;
     return {
-      id: data.id,
-      name: data.name,
-      taxId: data.tax_id,
-      currency: data.currency,
+      id: directData.id,
+      name: directData.name,
+      taxId: directData.tax_id,
+      currency: directData.currency,
       currencySymbol: "$",
       industry: org.industry,
-      isDemo: data.is_demo,
-      createdAt: data.created_at
+      isDemo: directData.is_demo,
+      createdAt: directData.created_at
     };
   }
 

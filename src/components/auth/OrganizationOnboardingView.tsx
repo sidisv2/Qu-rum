@@ -1,5 +1,5 @@
 ﻿import React, { useState } from "react";
-import { Building2, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Building2, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 import { Button } from "../ui/Button";
 
@@ -10,14 +10,23 @@ export const OrganizationOnboardingView: React.FC = () => {
   const [industry, setIndustry] = useState("Servicios");
   const [currency, setCurrency] = useState("ARS");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgName.trim() || isLoading) return;
 
     setIsLoading(true);
-    createNewOrganization(orgName.trim(), industry, taxId.trim());
-    setIsLoading(false);
+    setErrorMsg(null);
+
+    try {
+      await createNewOrganization(orgName.trim(), industry, taxId.trim());
+    } catch (err: any) {
+      console.error("Error al crear la organización:", err);
+      setErrorMsg(err.message || "No se pudo crear la empresa. Por favor, intentá nuevamente.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -34,6 +43,26 @@ export const OrganizationOnboardingView: React.FC = () => {
             Para comenzar, creá tu espacio de trabajo en Direx
           </p>
         </div>
+
+        {errorMsg && (
+          <div
+            style={{
+              padding: "0.75rem 1rem",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#991b1b",
+              fontSize: "0.8125rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "1.25rem"
+            }}
+          >
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div>
@@ -104,7 +133,7 @@ export const OrganizationOnboardingView: React.FC = () => {
             variant="primary"
             disabled={isLoading || !orgName.trim()}
             style={{ width: "100%", marginTop: "0.5rem", padding: "0.75rem" }}
-            icon={<ArrowRight size={16} />}
+            icon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
           >
             {isLoading ? "Creando empresa..." : "Comenzar en Direx"}
           </Button>
