@@ -28,6 +28,7 @@ import { BetaMonitoringView } from "./components/monitoring/BetaMonitoringView";
 import { SubscriptionView } from "./components/subscription/SubscriptionView";
 import { SupportView } from "./components/support/SupportView";
 import { FeedbackWidget } from "./components/feedback/FeedbackWidget";
+import { Analytics } from "@vercel/analytics/react";
 
 // Simple robust Error Boundary
 class ErrorBoundary extends React.Component<
@@ -233,6 +234,7 @@ export const App: React.FC = () => {
           <OrgProvider>
             <ToastProvider>
               <AppContent />
+              <Analytics />
             </ToastProvider>
           </OrgProvider>
         </RequireAuth>
