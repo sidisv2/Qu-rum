@@ -4,27 +4,30 @@ import {
   CalendarCheck,
   TrendingUp,
   Users,
-  Building2,
   Receipt,
   ArrowDownRight,
   ArrowUpRight,
-  FileSpreadsheet,
   Package,
-  FolderOpen,
+  Building2,
+  FileSpreadsheet,
   CheckSquare,
+  FolderOpen,
   BarChart3,
   Bot,
   Settings,
+  UploadCloud,
   ChevronLeft,
   ChevronRight,
-  UploadCloud,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles,
+  Activity
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 
 export type NavSection =
   | "dashboard"
   | "my-day"
+  | "smart-collections"
   | "sales"
   | "customers"
   | "quotes"
@@ -38,8 +41,22 @@ export type NavSection =
   | "analysis"
   | "director-ia"
   | "import-csv"
+  | "beta-monitoring"
   | "audit"
   | "settings";
+
+interface NavItem {
+  id: NavSection;
+  label: string;
+  icon: React.ReactNode;
+  badge?: string | number;
+  badgeColor?: "danger" | "warning" | "accent";
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
 
 interface SidebarProps {
   currentSection: NavSection;
@@ -50,42 +67,31 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-interface NavGroup {
-  label: string;
-  items: {
-    id: NavSection;
-    label: string;
-    icon: React.ReactNode;
-    badge?: number | string;
-    badgeColor?: "danger" | "warning" | "neutral" | "accent";
-    highlight?: boolean;
-  }[];
-}
-
 export const Sidebar: React.FC<SidebarProps> = ({
   currentSection,
   onSelectSection,
   collapsed,
   onToggleCollapse,
-  isMobileDrawer = false,
+  isMobileDrawer,
   onCloseMobile
 }) => {
-  const { currentOrg, receivables, quotes, tasks } = useOrg();
+  const { currentOrg, receivables, tasks, quotes } = useOrg();
 
-  const overdueCount = receivables.filter(r => r.status === "overdue").length;
-  const pendingTasksCount = tasks.filter(t => t.status === "pending").length;
+  const overdueCount = receivables.filter(r => r.status === "overdue" || (r.status === "pending" && new Date(r.dueDate) < new Date())).length;
+  const pendingTasksCount = tasks.filter(t => t.status === "pending" || t.status === "in_progress").length;
   const expiringQuotesCount = quotes.filter(q => q.status === "sent").length;
 
   const navGroups: NavGroup[] = [
     {
       label: "Principal",
       items: [
-        { id: "dashboard", label: "Inicio", icon: <LayoutDashboard size={17} /> },
-        { id: "my-day", label: "Mi Día", icon: <CalendarCheck size={17} />, badge: overdueCount + pendingTasksCount > 0 ? overdueCount + pendingTasksCount : undefined, badgeColor: "danger", highlight: true }
+        { id: "dashboard", label: "Panel Principal", icon: <LayoutDashboard size={17} /> },
+        { id: "my-day", label: "Mi Día", icon: <CalendarCheck size={17} /> },
+        { id: "smart-collections", label: "Gestión de Cobros", icon: <Sparkles size={17} />, badge: overdueCount > 0 ? "IA" : undefined, badgeColor: "accent" }
       ]
     },
     {
-      label: "Gestión",
+      label: "Operaciones",
       items: [
         { id: "sales", label: "Ventas", icon: <TrendingUp size={17} /> },
         { id: "customers", label: "Clientes", icon: <Users size={17} /> },
@@ -120,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: "Configuración",
       items: [
         { id: "import-csv", label: "Importar CSV", icon: <UploadCloud size={17} /> },
+        { id: "beta-monitoring", label: "Monitoreo Beta", icon: <Activity size={17} /> },
         { id: "audit", label: "Auditoría", icon: <ShieldCheck size={17} /> },
         { id: "settings", label: "Configuración", icon: <Settings size={17} /> }
       ]

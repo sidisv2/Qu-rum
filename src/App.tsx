@@ -22,6 +22,9 @@ import { DirectorIAView } from "./components/director-ia/DirectorIAView";
 import { ImportCSVView } from "./components/import-csv/ImportCSVView";
 import { AuditView } from "./components/audit/AuditView";
 import { SettingsView } from "./components/settings/SettingsView";
+import { SmartCollectionsView } from "./components/collections/SmartCollectionsView";
+import { BetaMonitoringView } from "./components/monitoring/BetaMonitoringView";
+import { FeedbackWidget } from "./components/feedback/FeedbackWidget";
 
 // Simple robust Error Boundary
 class ErrorBoundary extends React.Component<
@@ -91,6 +94,8 @@ export const AppContent: React.FC = () => {
         );
       case "my-day":
         return <MyDayView onNavigateToSection={setCurrentSection} />;
+      case "smart-collections":
+        return <SmartCollectionsView />;
       case "sales":
         return <SalesView />;
       case "customers":
@@ -117,6 +122,8 @@ export const AppContent: React.FC = () => {
         return <DirectorIAView />;
       case "import-csv":
         return <ImportCSVView />;
+      case "beta-monitoring":
+        return <BetaMonitoringView />;
       case "audit":
         return <AuditView />;
       case "settings":
@@ -181,6 +188,9 @@ export const AppContent: React.FC = () => {
           </ErrorBoundary>
         </main>
       </div>
+
+      {/* In-App Floating Feedback Widget */}
+      <FeedbackWidget currentView={currentSection} />
     </div>
   );
 };
