@@ -30,7 +30,7 @@ export const SubscriptionView: React.FC = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [_isInitializing, setIsInitializing] = useState(true);
 
   const plans: Plan[] = [
     {
@@ -76,32 +76,43 @@ export const SubscriptionView: React.FC = () => {
 
   useEffect(() => {
     async function loadSubscriptionData() {
-      if (!currentOrg?.id) return;
+      if (!currentOrg?.id) {
+        setIsInitializing(false);
+        return;
+      }
       setIsInitializing(true);
       try {
         if (supabase) {
           // 1. Consultar cupos de Fundador
-          const { data: slots, error: slotsErr } = await supabase.rpc("get_founder_slots_count");
-          if (!slotsErr && typeof slots === "number") {
-            setFounderSlotsTaken(slots);
-          } else {
+          try {
+            const { data: slots, error: slotsErr } = await supabase.rpc("get_founder_slots_count");
+            if (!slotsErr && typeof slots === "number") {
+              setFounderSlotsTaken(slots);
+            } else {
+              setFounderSlotsTaken(0);
+            }
+          } catch (_rpcErr) {
             setFounderSlotsTaken(0);
           }
 
           // 2. Consultar suscripción actual
-          const { data: subData, error: subErr } = await supabase
-            .from("organization_subscriptions")
-            .select("plan_id, status, is_founder_price, current_period_end")
-            .eq("organization_id", currentOrg.id)
-            .maybeSingle();
+          try {
+            const { data: subData, error: subErr } = await supabase
+              .from("organization_subscriptions")
+              .select("plan_id, status, is_founder_price, current_period_end")
+              .eq("organization_id", currentOrg.id)
+              .maybeSingle();
 
-          if (!subErr && subData) {
-            setCurrentSub({
-              planId: subData.plan_id,
-              status: subData.status as any,
-              isFounderPrice: subData.is_founder_price,
-              currentPeriodEnd: subData.current_period_end
-            });
+            if (!subErr && subData) {
+              setCurrentSub({
+                planId: subData.plan_id,
+                status: subData.status as any,
+                isFounderPrice: subData.is_founder_price,
+                currentPeriodEnd: subData.current_period_end
+              });
+            }
+          } catch (_subQueryErr) {
+            // Mantener estado seguro por defecto
           }
         }
       } catch (_e) {
@@ -115,7 +126,10 @@ export const SubscriptionView: React.FC = () => {
   }, [currentOrg?.id]);
 
   const handleSubscribe = async (planId: string) => {
-    if (!currentOrg?.id) return;
+    if (!currentOrg?.id) {
+      setActionError("Primero debés seleccionar o crear una empresa");
+      return;
+    }
     setIsLoading(true);
     setActionError(null);
 
@@ -130,7 +144,9 @@ export const SubscriptionView: React.FC = () => {
         });
 
         if (error) {
-          setActionError(error.message || "No se pudo iniciar el proceso de suscripción");
+          // Si el servidor devolvió un error legible
+          const message = error.context?.json?.error || error.message || "Error al conectar con el servidor de suscripciones";
+          setActionError(message);
           return;
         }
 
@@ -172,7 +188,7 @@ export const SubscriptionView: React.FC = () => {
 
       {actionError && (
         <div className="card" style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: "#991b1b", display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem" }}>
-          <AlertCircle size={18} />
+          <AlertCircle size={18} style={{ flexShrink: 0 }} />
           <span>{actionError}</span>
         </div>
       )}
