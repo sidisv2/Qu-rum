@@ -24,6 +24,7 @@ import {
   CreditCard
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
+import { getPathFromSection } from "../../lib/navigation/routes";
 
 export type NavSection =
   | "dashboard"

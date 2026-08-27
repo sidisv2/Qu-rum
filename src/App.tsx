@@ -1,4 +1,5 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useEffect } from "react";
+import { getSectionFromPath, getPathFromSection } from "./lib/navigation/routes";
 import { AuthProvider } from "./context/AuthContext";
 import { OrgProvider, useOrg } from "./context/OrgContext";
 import { ToastProvider } from "./components/ui/Toast";
@@ -79,7 +80,30 @@ class ErrorBoundary extends React.Component<
 }
 
 export const AppContent: React.FC = () => {
-  const [currentSection, setCurrentSection] = useState<NavSection>("dashboard");
+  const [currentSection, setCurrentSection] = useState<NavSection>(() => {
+    if (typeof window !== "undefined") {
+      return getSectionFromPath(window.location.pathname);
+    }
+    return "dashboard";
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentSection(getSectionFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const navigateToSection = (section: NavSection) => {
+    setCurrentSection(section);
+    if (typeof window !== "undefined") {
+      const targetPath = getPathFromSection(section);
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, "", targetPath);
+      }
+    }
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -88,13 +112,13 @@ export const AppContent: React.FC = () => {
       case "dashboard":
         return (
           <DashboardView
-            onNavigateToSection={setCurrentSection}
+            onNavigateToSection={navigateToSection}
             onOpenQuickSale={() => setCurrentSection("sales")}
             onOpenQuickExpense={() => setCurrentSection("expenses")}
           />
         );
       case "my-day":
-        return <MyDayView onNavigateToSection={setCurrentSection} />;
+        return <MyDayView onNavigateToSection={navigateToSection} />;
       case "smart-collections":
         return <SmartCollectionsView />;
       case "sales":
@@ -134,7 +158,7 @@ export const AppContent: React.FC = () => {
       default:
         return (
           <DashboardView
-            onNavigateToSection={setCurrentSection}
+            onNavigateToSection={navigateToSection}
             onOpenQuickSale={() => setCurrentSection("sales")}
             onOpenQuickExpense={() => setCurrentSection("expenses")}
           />
@@ -148,7 +172,7 @@ export const AppContent: React.FC = () => {
       <div style={{ display: "flex", height: "100%" }}>
         <Sidebar
           currentSection={currentSection}
-          onSelectSection={setCurrentSection}
+          onSelectSection={navigateToSection}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
@@ -169,7 +193,7 @@ export const AppContent: React.FC = () => {
           <div onClick={e => e.stopPropagation()} style={{ height: "100%" }}>
             <Sidebar
               currentSection={currentSection}
-              onSelectSection={setCurrentSection}
+              onSelectSection={navigateToSection}
               collapsed={false}
               onToggleCollapse={() => {}}
               isMobileDrawer={true}
@@ -183,7 +207,7 @@ export const AppContent: React.FC = () => {
       <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden" }}>
         <Header
           onToggleMobileMenu={() => setMobileMenuOpen(true)}
-          onNavigateToSection={setCurrentSection}
+          onNavigateToSection={navigateToSection}
         />
         <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
           <ErrorBoundary>

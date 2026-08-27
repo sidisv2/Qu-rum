@@ -1,4 +1,6 @@
-﻿import React, { useState, useMemo } from "react";
+﻿import React, { useState, useMemo, useEffect, useRef } from "react";
+import { ChatStorageService } from "../../lib/intelligence/chatStorage";
+import { useAuth } from "../../context/AuthContext";
 import {
   Bot,
   Send,
@@ -6,7 +8,8 @@ import {
   AlertTriangle,
   Lightbulb,
   Building2,
-  FileText
+  FileText,
+  Trash2
 } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 import { formatCurrency } from "../../lib/utils/formatters";
@@ -27,15 +30,45 @@ export const DirectorIAView: React.FC = () => {
     currentOrg
   } = useOrg();
 
-  const [messages, setMessages] = useState<Array<{ sender: "user" | "ia"; text: string; structuredInsights?: BusinessInsight[] }>>([
+  const { user } = useAuth();
+  const userName = user?.fullName?.split(" ")[0] || "Director";
+  const defaultWelcome = "Hola " + userName + ". Analicé las finanzas y operaciones de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy.";
+
+  const [messages, setMessages] = useState<Array<{ id?: string; sender: "user" | "ia"; text: string; structuredInsights?: BusinessInsight[] }>>([
     {
       sender: "ia",
-      text: "Hola Valentín. Analicé las finanzas y operaciones de " + (currentOrg?.name || "tu empresa") + " y preparé el diagnóstico de situación para hoy."
+      text: defaultWelcome
     }
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [evidenceInsight, setEvidenceInsight] = useState<BusinessInsight | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Cargar historial persistido al montar o cambiar de organización
+  useEffect(() => {
+    if (!currentOrg?.id) return;
+    let isMounted = true;
+    ChatStorageService.loadMessages(currentOrg.id, defaultWelcome).then((saved) => {
+      if (isMounted && saved.length > 0) {
+        setMessages(saved);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentOrg?.id]);
+
+  // Scroll automático al final
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  const handleClearHistory = async () => {
+    if (!currentOrg?.id) return;
+    await ChatStorageService.clearHistory(currentOrg.id, user?.id);
+    setMessages([{ sender: "ia", text: defaultWelcome }]);
+  };
 
   // Consulta analítica estructurada
   const analytics = useMemo(() => {
@@ -69,6 +102,11 @@ export const DirectorIAView: React.FC = () => {
     setInputText("");
     setIsLoading(true);
 
+    // Persistir mensaje del usuario
+    if (currentOrg?.id) {
+      await ChatStorageService.saveMessage(currentOrg.id, user?.id, "user", q);
+    }
+
     try {
       const response = await DirectorAIService.answerExecutiveQuery({
         question: q,
@@ -90,11 +128,20 @@ export const DirectorIAView: React.FC = () => {
         text: response.answer,
         structuredInsights: response.structuredInsights
       }]);
+
+      // Persistir respuesta del asistente
+      if (currentOrg?.id) {
+        await ChatStorageService.saveMessage(currentOrg.id, user?.id, "ia", response.answer);
+      }
     } catch (e) {
+      const errMsg = "Ocurrió un inconveniente al procesar la consulta. Por favor reintentá en unos momentos.";
       setMessages(prev => [...prev, {
         sender: "ia",
-        text: "Ocurrió un inconveniente al procesar la consulta. Por favor reintentá en unos momentos."
+        text: errMsg
       }]);
+      if (currentOrg?.id) {
+        await ChatStorageService.saveMessage(currentOrg.id, user?.id, "ia", errMsg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -116,11 +163,33 @@ export const DirectorIAView: React.FC = () => {
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "var(--color-success-bg)", padding: "0.35rem 0.75rem", borderRadius: "var(--radius-full)", border: "1px solid var(--color-success-border)" }}>
-          <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "var(--color-success)" }} />
-          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-success-text)" }}>
-            Motor Determinístico Activo
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button
+            onClick={handleClearHistory}
+            style={{
+              background: "none",
+              border: "1px solid var(--color-border-default)",
+              borderRadius: "var(--radius-md)",
+              padding: "0.35rem 0.65rem",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              color: "var(--color-text-muted)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.35rem"
+            }}
+            title="Vaciar historial del chat"
+          >
+            <Trash2 size={13} />
+            <span>Limpiar conversación</span>
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "var(--color-success-bg)", padding: "0.35rem 0.75rem", borderRadius: "var(--radius-full)", border: "1px solid var(--color-success-border)" }}>
+            <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "var(--color-success)" }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-success-text)" }}>
+              Motor Determinístico Activo
+            </span>
+          </div>
         </div>
       </div>
 
@@ -275,6 +344,7 @@ export const DirectorIAView: React.FC = () => {
               Consultando motor analítico de {currentOrg?.name}...
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
