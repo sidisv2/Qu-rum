@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from "react";
-import { CreditCard, Check, Sparkles, Clock, AlertCircle, ExternalLink, Loader2 } from "lucide-react";
+import { CreditCard, Check, Sparkles, Clock, AlertCircle, ExternalLink, Loader2, Lock, ArrowUpRight } from "lucide-react";
 import { useOrg } from "../../context/OrgContext";
 import { PlanLimitsService } from "../../lib/subscription/planLimits";
 import { supabase } from "../../lib/supabase/client";
@@ -363,15 +363,61 @@ export const SubscriptionView: React.FC = () => {
               </div>
 
               <div style={{ marginTop: "1.5rem" }}>
-                <Button
-                  variant={plan.isFounder ? "primary" : "outline"}
-                  disabled={!isAvailable || isLoading || isCurrent}
-                  onClick={() => handleSubscribe(plan.id)}
-                  style={{ width: "100%", padding: "0.65rem" }}
-                  icon={isLoading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                >
-                  {isCurrent ? "Plan Actual" : isAvailable ? "Suscribirse con Mercado Pago" : "Cupo Agotado"}
-                </Button>
+                {(() => {
+                  const isUpgrade = currentSub.status === "active" && currentSub.planId !== plan.id;
+                  const buttonLabel = isCurrent
+                    ? "Tu Plan Actual"
+                    : !isAvailable
+                    ? "Cupo Agotado"
+                    : isUpgrade
+                    ? `Mejorar a ${plan.name}`
+                    : `Elegir ${plan.name}`;
+
+                  return (
+                    <>
+                      <Button
+                        variant={plan.isFounder || isUpgrade ? "primary" : "outline"}
+                        disabled={!isAvailable || isLoading || isCurrent}
+                        onClick={() => handleSubscribe(plan.id)}
+                        style={{
+                          width: "100%",
+                          padding: "0.65rem",
+                          fontWeight: 700
+                        }}
+                        icon={
+                          isLoading ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : isCurrent ? (
+                            <Check size={14} />
+                          ) : isUpgrade ? (
+                            <ArrowUpRight size={14} />
+                          ) : (
+                            <Sparkles size={14} />
+                          )
+                        }
+                      >
+                        {buttonLabel}
+                      </Button>
+
+                      {!isCurrent && isAvailable && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "0.3rem",
+                            fontSize: "0.725rem",
+                            color: "var(--color-text-muted)",
+                            marginTop: "0.5rem"
+                          }}
+                        >
+                          <Lock size={11} />
+                          <span>Pago seguro con Mercado Pago</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );
