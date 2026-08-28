@@ -508,7 +508,7 @@ export class SupabaseRepository implements IDataRepository {
     this.checkClient();
     const { data: sData, error: sErr } = await supabase!.from("sales").insert({
       organization_id: orgId,
-      customer_id: sale.customerId,
+      customer_id: isValidUuid(sale.customerId) ? sale.customerId : null,
       customer_name: sale.customerName,
       sale_number: sale.saleNumber,
       sale_date: sale.date,
@@ -602,7 +602,7 @@ export class SupabaseRepository implements IDataRepository {
     this.checkClient();
     const { data, error } = await supabase!.from("expenses").insert({
       organization_id: orgId,
-      supplier_id: expense.supplierId || null,
+      supplier_id: isValidUuid(expense.supplierId) ? expense.supplierId : null,
       supplier_name: expense.supplierName,
       category: expense.category,
       amount: expense.amount,

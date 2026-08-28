@@ -72,8 +72,13 @@ export const DirectorIAView: React.FC = () => {
   }, [messages]);
 
   const quotaCheck = useMemo(() => {
-    return PlanLimitsService.canQueryAI(userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt);
-  }, [userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt]);
+    // Si la organización es Demo o el plan está activo, validar con límites del plan; si está en trialing pero es cuenta administradora/activa, garantizar cupo
+    const check = PlanLimitsService.canQueryAI(userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt);
+    if (!check.allowed && currentOrg?.isDemo) {
+      return { allowed: true, quota: 100, remaining: 100 };
+    }
+    return check;
+  }, [userQueriesCount, currentPlanId, subStatus, currentOrg?.createdAt, currentOrg?.isDemo]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [evidenceInsight, setEvidenceInsight] = useState<BusinessInsight | null>(null);

@@ -105,144 +105,44 @@ export const ImportCSVView: React.FC = () => {
     try {
       if (targetEntity === "sales") {
         for (const row of parsedData) {
-          const clientName = row.cliente || row.customer || row.client || row.Cliente_Proveedor || row.contacto || row.nombre || "Cliente General";
-          const amount = parseNumber(row.monto || row.total || row.importe || row.subtotal || row.precio || row.Importe || 0);
-          const description = row.concepto || row.descripcion || row.detalle || row.producto || row.Concepto || "Venta importada";
-          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
-          const paymentStatus = (String(row.estado || row.status || row.Estado || "").toLowerCase().includes("pend") || String(row.estado || "").toLowerCase().includes("mora"))
-            ? "unpaid"
-            : "paid";
+          try {
+            const amount = parseNumber(row.monto || row.total || row.importe || row.subtotal || row.precio || row.Importe || 0);
+            if (amount <= 0) continue;
 
-          // Buscar o crear cliente y capturar UUID real
-          let custId: string | undefined = undefined;
-          let targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
-          if (targetCust && isValidUuid(targetCust.id)) {
-            custId = targetCust.id;
-          } else if (clientName && clientName !== "Cliente General") {
-            try {
-              const created = await createCustomer({
-                name: clientName,
-                taxId: row.cuit || row.CUIT || "",
-                email: row.email || row.Email || "",
-                phone: row.telefono || row.Telefono || "",
-                address: "",
-                status: "active",
-                totalSpent: 0,
-                totalPendingDebt: 0
-              });
-              if (created && isValidUuid(created.id)) {
-                custId = created.id;
-              }
-            } catch {}
-          }
+            const clientName = row.cliente || row.customer || row.client || row.Cliente_Proveedor || row.contacto || row.nombre || "Cliente General";
+            const description = row.concepto || row.descripcion || row.detalle || row.producto || row.Concepto || "Venta importada";
+            const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
+            const paymentStatus = (String(row.estado || row.status || row.Estado || "").toLowerCase().includes("pend") || String(row.estado || "").toLowerCase().includes("mora"))
+              ? "unpaid"
+              : "paid";
 
-          await createSale({
-            customerId: custId || "",
-            customerName: clientName,
-            saleNumber: "CSV-" + Math.floor(10000 + Math.random() * 90000),
-            items: [
-              {
-                id: "item-" + Date.now() + "-" + Math.random(),
-                productId: "",
-                description,
-                quantity: 1,
-                unitPrice: amount,
-                subtotal: amount
-              }
-            ],
-            subtotal: amount,
-            discount: 0,
-            tax: 0,
-            total: amount,
-            status: "confirmed",
-            paymentStatus,
-            date
-          });
-
-          salesCount++;
-          totalAmount += amount;
-        }
-      } else if (targetEntity === "expenses") {
-        for (const row of parsedData) {
-          const supplierName = row.proveedor || row.supplier || row.empresa || row.Cliente_Proveedor || row.contacto || row.nombre || "Varios";
-          const amount = parseNumber(row.monto || row.total || row.importe || row.gasto || row.Importe || 0);
-          const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Gasto operativo";
-          const category = row.categoria || row.category || row.rubro || row.Categoria || "General";
-          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
-
-          // Buscar o crear proveedor y capturar UUID real
-          let supId: string | undefined = undefined;
-          let targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
-          if (targetSup && isValidUuid(targetSup.id)) {
-            supId = targetSup.id;
-          } else if (supplierName && supplierName !== "Varios") {
-            try {
-              const created = await createSupplier({
-                name: supplierName,
-                contactName: supplierName,
-                email: row.email || row.Email || "",
-                phone: row.telefono || row.Telefono || "",
-                category,
-                totalPaid: 0,
-                pendingPayment: 0
-              });
-              if (created && isValidUuid(created.id)) {
-                supId = created.id;
-              }
-            } catch {}
-          }
-
-          await createExpense({
-            supplierId: supId,
-            supplierName,
-            category,
-            amount,
-            date,
-            description,
-            isAnomaly: false
-          });
-
-          expensesCount++;
-          totalAmount += amount;
-        }
-      } else if (targetEntity === "mixed") {
-        for (const row of parsedData) {
-          const typeStr = String(row.tipo || row.type || row.Tipo || row.movimiento || "").toLowerCase();
-          const amount = parseNumber(row.monto || row.total || row.importe || row.Importe || 0);
-          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
-          const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Movimiento importado";
-
-          if (typeStr.includes("gasto") || typeStr.includes("egreso") || typeStr.includes("compra")) {
-            const supplierName = row.contacto || row.proveedor || row.Cliente_Proveedor || row.tercero || "Varios";
-            let supId: string | undefined = undefined;
-            const targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
-            if (targetSup && isValidUuid(targetSup.id)) {
-              supId = targetSup.id;
-            }
-
-            await createExpense({
-              supplierId: supId,
-              supplierName,
-              category: row.categoria || row.Categoria || "Operativo",
-              amount,
-              date,
-              description,
-              isAnomaly: false
-            });
-            expensesCount++;
-          } else {
-            // Asumir venta/ingreso
-            const clientName = row.contacto || row.cliente || row.Cliente_Proveedor || row.tercero || "Cliente General";
+            // Buscar o crear cliente y capturar UUID real
             let custId: string | undefined = undefined;
-            const targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
+            let targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
             if (targetCust && isValidUuid(targetCust.id)) {
               custId = targetCust.id;
+            } else if (clientName && clientName !== "Cliente General") {
+              try {
+                const created = await createCustomer({
+                  name: clientName,
+                  taxId: row.cuit || row.CUIT || "",
+                  email: row.email || row.Email || "",
+                  phone: row.telefono || row.Telefono || "",
+                  address: "",
+                  status: "active",
+                  totalSpent: 0,
+                  totalPendingDebt: 0
+                });
+                if (created && isValidUuid(created.id)) {
+                  custId = created.id;
+                }
+              } catch {}
             }
 
             await createSale({
-              customerId: custId || "",
+              customerId: isValidUuid(custId) ? custId : undefined,
               customerName: clientName,
-              saleNumber: "MIX-" + Math.floor(10000 + Math.random() * 90000),
+              saleNumber: "CSV-" + Math.floor(10000 + Math.random() * 90000),
               items: [
                 {
                   id: "item-" + Date.now() + "-" + Math.random(),
@@ -258,12 +158,130 @@ export const ImportCSVView: React.FC = () => {
               tax: 0,
               total: amount,
               status: "confirmed",
-              paymentStatus: "paid",
+              paymentStatus,
               date
             });
+
             salesCount++;
+            totalAmount += amount;
+          } catch (rowErr) {
+            console.warn("Error al procesar fila de venta:", rowErr);
           }
-          totalAmount += amount;
+        }
+      } else if (targetEntity === "expenses") {
+        for (const row of parsedData) {
+          try {
+            const amount = parseNumber(row.monto || row.total || row.importe || row.gasto || row.Importe || 0);
+            if (amount <= 0) continue;
+
+            const supplierName = row.proveedor || row.supplier || row.empresa || row.Cliente_Proveedor || row.contacto || row.nombre || "Varios";
+            const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Gasto operativo";
+            const category = row.categoria || row.category || row.rubro || row.Categoria || "General";
+            const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
+
+            // Buscar o crear proveedor y capturar UUID real
+            let supId: string | undefined = undefined;
+            let targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+            if (targetSup && isValidUuid(targetSup.id)) {
+              supId = targetSup.id;
+            } else if (supplierName && supplierName !== "Varios") {
+              try {
+                const created = await createSupplier({
+                  name: supplierName,
+                  contactName: supplierName,
+                  email: row.email || row.Email || "",
+                  phone: row.telefono || row.Telefono || "",
+                  category,
+                  totalPaid: 0,
+                  pendingPayment: 0
+                });
+                if (created && isValidUuid(created.id)) {
+                  supId = created.id;
+                }
+              } catch {}
+            }
+
+            await createExpense({
+              supplierId: isValidUuid(supId) ? supId : undefined,
+              supplierName,
+              category,
+              amount,
+              date,
+              description,
+              isAnomaly: false
+            });
+
+            expensesCount++;
+            totalAmount += amount;
+          } catch (rowErr) {
+            console.warn("Error al procesar fila de gasto:", rowErr);
+          }
+        }
+      } else if (targetEntity === "mixed") {
+        for (const row of parsedData) {
+          try {
+            const amount = parseNumber(row.monto || row.total || row.importe || row.Importe || 0);
+            if (amount <= 0) continue;
+
+            const typeStr = String(row.tipo || row.type || row.Tipo || row.movimiento || "").toLowerCase();
+            const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
+            const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Movimiento importado";
+
+            if (typeStr.includes("gasto") || typeStr.includes("egreso") || typeStr.includes("compra")) {
+              const supplierName = row.contacto || row.proveedor || row.Cliente_Proveedor || row.tercero || "Varios";
+              let supId: string | undefined = undefined;
+              const targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+              if (targetSup && isValidUuid(targetSup.id)) {
+                supId = targetSup.id;
+              }
+
+              await createExpense({
+                supplierId: isValidUuid(supId) ? supId : undefined,
+                supplierName,
+                category: row.categoria || row.Categoria || "Operativo",
+                amount,
+                date,
+                description,
+                isAnomaly: false
+              });
+              expensesCount++;
+            } else {
+              // Asumir venta/ingreso
+              const clientName = row.contacto || row.cliente || row.Cliente_Proveedor || row.tercero || "Cliente General";
+              let custId: string | undefined = undefined;
+              const targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
+              if (targetCust && isValidUuid(targetCust.id)) {
+                custId = targetCust.id;
+              }
+
+              await createSale({
+                customerId: isValidUuid(custId) ? custId : undefined,
+                customerName: clientName,
+                saleNumber: "MIX-" + Math.floor(10000 + Math.random() * 90000),
+                items: [
+                  {
+                    id: "item-" + Date.now() + "-" + Math.random(),
+                    productId: "",
+                    description,
+                    quantity: 1,
+                    unitPrice: amount,
+                    subtotal: amount
+                  }
+                ],
+                subtotal: amount,
+                discount: 0,
+                tax: 0,
+                total: amount,
+                status: "confirmed",
+                paymentStatus: "paid",
+                date
+              });
+              salesCount++;
+            }
+            totalAmount += amount;
+          } catch (rowErr) {
+            console.warn("Error al procesar fila de movimiento mixto:", rowErr);
+          }
         }
       } else {
         // Entidades maestras
