@@ -262,7 +262,7 @@ export class LocalRepository implements IDataRepository {
           organizationId: orgId,
           saleId: newSale.id,
           saleNumber: newSale.saleNumber,
-          customerId: newSale.customerId,
+          customerId: newSale.customerId || "",
           customerName: newSale.customerName,
           amount: cleanTotal,
           balance: cleanTotal,

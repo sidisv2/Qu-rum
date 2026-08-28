@@ -17,6 +17,11 @@ import Papa from "papaparse";
 import { useOrg } from "../../context/OrgContext";
 import { Button } from "../ui/Button";
 
+const isValidUuid = (id?: string | null): boolean => {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+};
+
 type ImportTarget = "sales" | "expenses" | "mixed" | "customers" | "products" | "suppliers";
 
 export const ImportCSVView: React.FC = () => {
@@ -90,34 +95,39 @@ export const ImportCSVView: React.FC = () => {
     try {
       if (targetEntity === "sales") {
         for (const row of parsedData) {
-          const clientName = row.cliente || row.customer || row.client || row.nombre || "Cliente General";
-          const amount = parseNumber(row.monto || row.total || row.importe || row.subtotal || row.precio || 0);
-          const description = row.concepto || row.descripcion || row.detalle || row.producto || "Venta importada";
-          const date = row.fecha || row.date || new Date().toISOString().split("T")[0];
-          const paymentStatus = (String(row.estado || row.status || "").toLowerCase().includes("pend") || String(row.estado || "").toLowerCase().includes("mora"))
+          const clientName = row.cliente || row.customer || row.client || row.Cliente_Proveedor || row.contacto || row.nombre || "Cliente General";
+          const amount = parseNumber(row.monto || row.total || row.importe || row.subtotal || row.precio || row.Importe || 0);
+          const description = row.concepto || row.descripcion || row.detalle || row.producto || row.Concepto || "Venta importada";
+          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
+          const paymentStatus = (String(row.estado || row.status || row.Estado || "").toLowerCase().includes("pend") || String(row.estado || "").toLowerCase().includes("mora"))
             ? "unpaid"
             : "paid";
 
-          // Buscar o crear cliente
+          // Buscar o crear cliente y capturar UUID real
+          let custId: string | undefined = undefined;
           let targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
-          let custId = targetCust ? targetCust.id : "";
-          if (!targetCust && clientName) {
+          if (targetCust && isValidUuid(targetCust.id)) {
+            custId = targetCust.id;
+          } else if (clientName && clientName !== "Cliente General") {
             try {
-              await createCustomer({
+              const created = await createCustomer({
                 name: clientName,
-                taxId: row.cuit || "",
-                email: row.email || "",
-                phone: row.telefono || "",
+                taxId: row.cuit || row.CUIT || "",
+                email: row.email || row.Email || "",
+                phone: row.telefono || row.Telefono || "",
                 address: "",
                 status: "active",
                 totalSpent: 0,
                 totalPendingDebt: 0
               });
+              if (created && isValidUuid(created.id)) {
+                custId = created.id;
+              }
             } catch {}
           }
 
           await createSale({
-            customerId: custId || "cust-imported",
+            customerId: custId || "",
             customerName: clientName,
             saleNumber: "CSV-" + Math.floor(10000 + Math.random() * 90000),
             items: [
@@ -144,31 +154,36 @@ export const ImportCSVView: React.FC = () => {
         }
       } else if (targetEntity === "expenses") {
         for (const row of parsedData) {
-          const supplierName = row.proveedor || row.supplier || row.empresa || row.nombre || "Varios";
-          const amount = parseNumber(row.monto || row.total || row.importe || row.gasto || 0);
-          const description = row.concepto || row.descripcion || row.detalle || "Gasto operativo";
-          const category = row.categoria || row.category || row.rubro || "General";
-          const date = row.fecha || row.date || new Date().toISOString().split("T")[0];
+          const supplierName = row.proveedor || row.supplier || row.empresa || row.Cliente_Proveedor || row.contacto || row.nombre || "Varios";
+          const amount = parseNumber(row.monto || row.total || row.importe || row.gasto || row.Importe || 0);
+          const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Gasto operativo";
+          const category = row.categoria || row.category || row.rubro || row.Categoria || "General";
+          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
 
-          // Buscar o crear proveedor
+          // Buscar o crear proveedor y capturar UUID real
+          let supId: string | undefined = undefined;
           let targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
-          let supId = targetSup ? targetSup.id : "";
-          if (!targetSup && supplierName && supplierName !== "Varios") {
+          if (targetSup && isValidUuid(targetSup.id)) {
+            supId = targetSup.id;
+          } else if (supplierName && supplierName !== "Varios") {
             try {
-              await createSupplier({
+              const created = await createSupplier({
                 name: supplierName,
                 contactName: supplierName,
-                email: row.email || "",
-                phone: row.telefono || "",
+                email: row.email || row.Email || "",
+                phone: row.telefono || row.Telefono || "",
                 category,
                 totalPaid: 0,
                 pendingPayment: 0
               });
+              if (created && isValidUuid(created.id)) {
+                supId = created.id;
+              }
             } catch {}
           }
 
           await createExpense({
-            supplierId: supId || "sup-imported",
+            supplierId: supId,
             supplierName,
             category,
             amount,
@@ -182,17 +197,23 @@ export const ImportCSVView: React.FC = () => {
         }
       } else if (targetEntity === "mixed") {
         for (const row of parsedData) {
-          const typeStr = String(row.tipo || row.type || row.movimiento || "").toLowerCase();
-          const amount = parseNumber(row.monto || row.total || row.importe || 0);
-          const date = row.fecha || row.date || new Date().toISOString().split("T")[0];
-          const description = row.concepto || row.descripcion || row.detalle || "Movimiento importado";
+          const typeStr = String(row.tipo || row.type || row.Tipo || row.movimiento || "").toLowerCase();
+          const amount = parseNumber(row.monto || row.total || row.importe || row.Importe || 0);
+          const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
+          const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Movimiento importado";
 
           if (typeStr.includes("gasto") || typeStr.includes("egreso") || typeStr.includes("compra")) {
-            const supplierName = row.contacto || row.proveedor || row.tercero || "Varios";
+            const supplierName = row.contacto || row.proveedor || row.Cliente_Proveedor || row.tercero || "Varios";
+            let supId: string | undefined = undefined;
+            const targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+            if (targetSup && isValidUuid(targetSup.id)) {
+              supId = targetSup.id;
+            }
+
             await createExpense({
-              supplierId: "sup-mixed",
+              supplierId: supId,
               supplierName,
-              category: row.categoria || "Operativo",
+              category: row.categoria || row.Categoria || "Operativo",
               amount,
               date,
               description,
@@ -201,9 +222,15 @@ export const ImportCSVView: React.FC = () => {
             expensesCount++;
           } else {
             // Asumir venta/ingreso
-            const clientName = row.contacto || row.cliente || row.tercero || "Cliente General";
+            const clientName = row.contacto || row.cliente || row.Cliente_Proveedor || row.tercero || "Cliente General";
+            let custId: string | undefined = undefined;
+            const targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
+            if (targetCust && isValidUuid(targetCust.id)) {
+              custId = targetCust.id;
+            }
+
             await createSale({
-              customerId: "cust-mixed",
+              customerId: custId || "",
               customerName: clientName,
               saleNumber: "MIX-" + Math.floor(10000 + Math.random() * 90000),
               items: [

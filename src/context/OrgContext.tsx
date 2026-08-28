@@ -47,11 +47,11 @@ interface OrgContextType {
   createNewOrganization: (name: string, industry?: string, taxId?: string) => Promise<void>;
   hasPermission: (allowedRoles: Role[]) => boolean;
 
-  createCustomer: (customer: Omit<Customer, "id" | "organizationId" | "createdAt">) => Promise<void>;
+  createCustomer: (customer: Omit<Customer, "id" | "organizationId" | "createdAt">) => Promise<Customer | undefined>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
 
-  createSupplier: (supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">) => Promise<void>;
+  createSupplier: (supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">) => Promise<Supplier | undefined>;
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
 
@@ -215,8 +215,8 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return allowedRoles.includes(userRole);
   };
 
-  const createCustomer = async (cust: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<void> => {
-    if (!currentOrg) return;
+  const createCustomer = async (cust: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<Customer | undefined> => {
+    if (!currentOrg) return undefined;
     const created = await repo.createCustomer(currentOrg.id, cust);
     setCustomers(prev => [created, ...prev]);
     await repo.addAuditLog(currentOrg.id, {
@@ -227,6 +227,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       entityId: created.id,
       details: "Cliente creado: " + created.name
     });
+    return created;
   };
 
   const updateCustomer = async (id: string, data: Partial<Customer>): Promise<void> => {
@@ -241,10 +242,11 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCustomers(prev => prev.filter(c => c.id !== id));
   };
 
-  const createSupplier = async (sup: Omit<Supplier, "id" | "organizationId" | "createdAt">): Promise<void> => {
-    if (!currentOrg) return;
+  const createSupplier = async (sup: Omit<Supplier, "id" | "organizationId" | "createdAt">): Promise<Supplier | undefined> => {
+    if (!currentOrg) return undefined;
     const created = await repo.createSupplier(currentOrg.id, sup);
     setSuppliers(prev => [created, ...prev]);
+    return created;
   };
 
   const updateSupplier = async (id: string, data: Partial<Supplier>): Promise<void> => {

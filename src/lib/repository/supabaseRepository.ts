@@ -1,3 +1,8 @@
+function isValidUuid(id?: string | null): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 ﻿import { IDataRepository, PaginatedResult, PaginationParams, PaymentParams } from "./types";
 import { calculateMargin, safeRound, sanitizeCsvField } from "../utils/formatters";
 import { supabase, isSupabaseConfigured } from "../supabase/client";
