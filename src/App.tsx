@@ -154,6 +154,17 @@ export const AppContent: React.FC = () => {
         return <SubscriptionView />;
       case "support":
         return <SupportView />;
+      case "legal":
+        return (
+          <LegalView
+            initialTab={
+              typeof window !== "undefined" && window.location.pathname.includes("privacidad")
+                ? "privacy"
+                : "terms"
+            }
+            onBack={() => navigateToSection("dashboard")}
+          />
+        );
       case "beta-monitoring":
         return <BetaMonitoringView />;
       case "audit":

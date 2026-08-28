@@ -307,14 +307,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.45rem", fontSize: "0.7rem", color: "var(--color-text-muted)" }}>
             <button
-              onClick={() => onSelectSection("legal")}
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.history.pushState(null, "", "/terminos");
+                }
+                onSelectSection("legal");
+              }}
               style={{ background: "none", border: "none", padding: 0, color: "var(--color-text-muted)", cursor: "pointer", textDecoration: "underline", fontSize: "0.7rem" }}
             >
               Términos
             </button>
             <span>•</span>
             <button
-              onClick={() => onSelectSection("legal")}
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.history.pushState(null, "", "/privacidad");
+                }
+                onSelectSection("legal");
+              }}
               style={{ background: "none", border: "none", padding: 0, color: "var(--color-text-muted)", cursor: "pointer", textDecoration: "underline", fontSize: "0.7rem" }}
             >
               Privacidad
