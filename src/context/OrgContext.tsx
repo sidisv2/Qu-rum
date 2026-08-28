@@ -83,6 +83,7 @@ interface OrgContextType {
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   importBulkData: (entity: string, records: any[]) => number;
+  reloadData: () => Promise<void>;
   resetDemoData: () => void;
 }
 
@@ -370,6 +371,41 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
+  const reloadData = async (): Promise<void> => {
+    if (!currentOrg) return;
+    const orgId = currentOrg.id;
+    try {
+      const [cRes, sRes, pRes, sl, ex, rec, pay, q, t, d, a, n] = await Promise.all([
+        repo.getCustomers(orgId),
+        repo.getSuppliers(orgId),
+        repo.getProducts(orgId),
+        repo.getSales(orgId),
+        repo.getExpenses(orgId),
+        repo.getReceivables(orgId),
+        repo.getPayables(orgId),
+        repo.getQuotes(orgId),
+        repo.getTasks(orgId),
+        repo.getDocuments(orgId),
+        repo.getAuditLogs(orgId),
+        repo.getNotifications(orgId)
+      ]);
+      setCustomers(cRes.data);
+      setSuppliers(sRes.data);
+      setProducts(pRes.data);
+      setSales(sl.data);
+      setExpenses(ex.data);
+      setReceivables(rec.data);
+      setPayables(pay.data);
+      setQuotes(q.data);
+      setTasks(t.data);
+      setDocuments(d.data);
+      setAuditLogs(a.data);
+      setNotifications(n);
+    } catch (err) {
+      console.error("Error reloading org data:", err);
+    }
+  };
+
   const importBulkData = (entity: string, records: any[]): number => {
     return records.length;
   };
@@ -435,6 +471,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           markNotificationAsRead,
           markAllNotificationsAsRead,
           importBulkData,
+          reloadData,
           resetDemoData
         }}
       >
@@ -496,6 +533,7 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationAsRead,
         markAllNotificationsAsRead,
         importBulkData,
+        reloadData,
         resetDemoData
       }}
     >
