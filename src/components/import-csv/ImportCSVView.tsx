@@ -77,7 +77,17 @@ export const ImportCSVView: React.FC = () => {
   const parseNumber = (val: any): number => {
     if (!val) return 0;
     if (typeof val === "number") return val;
-    const clean = String(val).replace(/[^0-9.,-]/g, "").replace(",", ".");
+    let str = String(val).trim();
+    if (str.includes(".") && str.includes(",")) {
+      if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else {
+        str = str.replace(/,/g, "");
+      }
+    } else if (str.includes(",")) {
+      str = str.replace(",", ".");
+    }
+    const clean = str.replace(/[^0-9.-]/g, "");
     const num = parseFloat(clean);
     return isNaN(num) ? 0 : num;
   };

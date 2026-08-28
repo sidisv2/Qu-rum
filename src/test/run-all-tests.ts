@@ -9,6 +9,7 @@ import { runTasksDocumentsTestSuite } from "../lib/tasks-documents/__tests__/tas
 import { runE2EFullAuditSuite } from "../lib/e2e-audit/__tests__/e2eFullWorkflow.test";
 import { runDirectorSecurityTestSuite } from "../lib/intelligence/__tests__/directorSecurity.test";
 import { runProductionSecurityTestSuite } from "../lib/security/__tests__/productionSecurity.test";
+import { runCsvImportIntegrationSuite } from "./csvImport.integration.test";
 import { OrganizationStore } from "../lib/db/orgStore";
 import { resetStorageRepository } from "../lib/storage";
 
@@ -41,8 +42,10 @@ async function main() {
   resetTestEnvironment();
   const p11 = await runProductionSecurityTestSuite();
   resetTestEnvironment();
+  const p12 = await runCsvImportIntegrationSuite();
+  resetTestEnvironment();
 
-  if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6 || !p7 || !p8 || !p9 || !p10 || !p11) {
+  if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6 || !p7 || !p8 || !p9 || !p10 || !p11 || !p12) {
     process.exit(1);
   }
 }
