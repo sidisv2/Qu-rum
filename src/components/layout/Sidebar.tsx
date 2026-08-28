@@ -304,6 +304,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div style={{ fontSize: "0.6875rem", color: "var(--color-text-muted)" }}>
             CUIT: {currentOrg?.taxId || "30-11223344-5"}
           </div>
+
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.45rem", fontSize: "0.7rem", color: "var(--color-text-muted)" }}>
+            <button
+              onClick={() => onSelectSection("legal")}
+              style={{ background: "none", border: "none", padding: 0, color: "var(--color-text-muted)", cursor: "pointer", textDecoration: "underline", fontSize: "0.7rem" }}
+            >
+              Términos
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => onSelectSection("legal")}
+              style={{ background: "none", border: "none", padding: 0, color: "var(--color-text-muted)", cursor: "pointer", textDecoration: "underline", fontSize: "0.7rem" }}
+            >
+              Privacidad
+            </button>
+          </div>
         </div>
       )}
     </aside>

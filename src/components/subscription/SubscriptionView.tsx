@@ -423,6 +423,34 @@ export const SubscriptionView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Footer Legal Informativo */}
+      <div style={{ marginTop: "2.5rem", textAlign: "center", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+        Al contratar o utilizar nuestros servicios, aceptás nuestros{" "}
+        <a
+          href="/terminos"
+          onClick={(e) => {
+            e.preventDefault();
+            window.history.pushState(null, "", "/terminos");
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+          style={{ color: "var(--color-primary, #4f46e5)", textDecoration: "underline" }}
+        >
+          Términos del Servicio
+        </a>{" "}
+        y{" "}
+        <a
+          href="/privacidad"
+          onClick={(e) => {
+            e.preventDefault();
+            window.history.pushState(null, "", "/privacidad");
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+          style={{ color: "var(--color-primary, #4f46e5)", textDecoration: "underline" }}
+        >
+          Política de Privacidad
+        </a>.
+      </div>
     </div>
   );
 };
