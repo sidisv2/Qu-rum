@@ -2,7 +2,7 @@
   id: "starter" | "founder" | "pro";
   name: string;
   maxUsers: number;
-  aiMonthlyQuota: number | "unlimited";
+  aiMonthlyQuota: number;
   features: string[];
 }
 
@@ -11,11 +11,11 @@ export const PLAN_DEFINITIONS: Record<string, PlanDefinition> = {
     id: "starter",
     name: "Plan Starter",
     maxUsers: 2,
-    aiMonthlyQuota: 50,
+    aiMonthlyQuota: 75,
     features: [
-      "Director IA estándar (50 consultas/mes)",
+      "Director IA (75 consultas/mes)",
       "Ventas, Gastos y Cobranzas",
-      "Hasta 2 usuarios",
+      "Hasta 2 usuarios incluidos",
       "Importación CSV"
     ]
   },
@@ -23,9 +23,9 @@ export const PLAN_DEFINITIONS: Record<string, PlanDefinition> = {
     id: "founder",
     name: "Plan Fundador",
     maxUsers: 5,
-    aiMonthlyQuota: "unlimited",
+    aiMonthlyQuota: 200,
     features: [
-      "Director IA ilimitado",
+      "Director IA prioritario (200 consultas/mes)",
       "Gestión de Cobros Inteligente",
       "Hasta 5 usuarios incluidos",
       "Precio congelado por 12 meses",
@@ -36,13 +36,13 @@ export const PLAN_DEFINITIONS: Record<string, PlanDefinition> = {
     id: "pro",
     name: "Plan Pro",
     maxUsers: 10,
-    aiMonthlyQuota: "unlimited",
+    aiMonthlyQuota: 500,
     features: [
-      "Director IA ilimitado",
+      "Director IA corporativo (500 consultas/mes)",
       "Multi-empresa y Multi-moneda",
-      "Hasta 10 usuarios",
+      "Hasta 10 usuarios incluidos",
       "Auditoría append-only avanzada",
-      "SLA 99.9%"
+      "SLA 99.9% y soporte dedicado"
     ]
   }
 };
@@ -110,7 +110,7 @@ export class PlanLimitsService {
     orgCreatedAt?: string | null
   ): {
     allowed: boolean;
-    quota: number | "unlimited";
+    quota: number;
     remaining: number;
     reason?: string;
   } {
@@ -121,7 +121,7 @@ export class PlanLimitsService {
           allowed: false,
           quota: this.TRIAL_AI_QUOTA,
           remaining: 0,
-          reason: "Tu período de prueba de 7 días ha finalizado. Suscribite al Plan Fundador para continuar consultando al Director IA."
+          reason: "Tu período de prueba de 7 días ha finalizado. Elegí un plan para continuar consultando al Director IA."
         };
       }
 
@@ -133,7 +133,7 @@ export class PlanLimitsService {
           allowed: false,
           quota,
           remaining: 0,
-          reason: `Alcanzaste el límite de ${quota} consultas de prueba con el Director IA. Elegí tu plan para desbloquear consultas ilimitadas.`
+          reason: `Alcanzaste el límite de ${quota} consultas de prueba con el Director IA. Elegí tu plan para aumentar tu cuota mensual.`
         };
       }
 
@@ -145,10 +145,6 @@ export class PlanLimitsService {
     }
 
     const plan = this.getPlan(planId);
-    if (plan.aiMonthlyQuota === "unlimited") {
-      return { allowed: true, quota: "unlimited", remaining: 999999 };
-    }
-
     const quota = plan.aiMonthlyQuota;
     const remaining = Math.max(0, quota - currentQueriesCount);
 
@@ -157,7 +153,7 @@ export class PlanLimitsService {
         allowed: false,
         quota,
         remaining: 0,
-        reason: `Alcanzaste tu límite mensual de ${quota} consultas con el Director IA en el ${plan.name}. Actualizá tu plan a Fundador o Pro para acceso ilimitado.`
+        reason: `Alcanzaste tu límite mensual de ${quota} consultas con el Director IA en el ${plan.name}. Actualizá tu plan para ampliar tu cuota.`
       };
     }
 

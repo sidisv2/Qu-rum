@@ -229,6 +229,24 @@ export const DirectorIAView: React.FC = () => {
             <Trash2 size={13} />
             <span>Limpiar conversación</span>
           </button>
+          {/* Indicador de Cuota Mensual de Consultas */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            backgroundColor: quotaCheck.remaining > 0 ? "rgba(79, 70, 229, 0.08)" : "#fef2f2",
+            padding: "0.35rem 0.75rem",
+            borderRadius: "var(--radius-full)",
+            border: quotaCheck.remaining > 0 ? "1px solid rgba(79, 70, 229, 0.2)" : "1px solid #fecaca"
+          }}>
+            <Sparkles size={13} style={{ color: quotaCheck.remaining > 0 ? "#4f46e5" : "#dc2626" }} />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: quotaCheck.remaining > 0 ? "#4338ca" : "#991b1b" }}>
+              {subStatus === "trialing"
+                ? `Prueba: ${userQueriesCount} / ${quotaCheck.quota} consultas`
+                : `Consumo mes: ${userQueriesCount} / ${quotaCheck.quota} consultas`}
+            </span>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "var(--color-success-bg)", padding: "0.35rem 0.75rem", borderRadius: "var(--radius-full)", border: "1px solid var(--color-success-border)" }}>
             <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "var(--color-success)" }} />
             <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-success-text)" }}>

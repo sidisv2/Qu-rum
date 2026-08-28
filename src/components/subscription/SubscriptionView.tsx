@@ -44,7 +44,7 @@ export const SubscriptionView: React.FC = () => {
       maxUsers: 5,
       isFounder: true,
       features: [
-        "Director IA ilimitado",
+        "Director IA prioritario (200 consultas/mes)",
         "Gestión de Cobros Inteligente",
         "Hasta 5 usuarios incluidos",
         "Precio congelado por 12 meses",
@@ -57,9 +57,9 @@ export const SubscriptionView: React.FC = () => {
       price: 19900,
       maxUsers: 2,
       features: [
-        "Director IA estándar",
+        "Director IA estándar (75 consultas/mes)",
         "Ventas, Gastos y Cobranzas",
-        "Hasta 2 usuarios",
+        "Hasta 2 usuarios incluidos",
         "Importador universal CSV"
       ]
     },
@@ -69,11 +69,11 @@ export const SubscriptionView: React.FC = () => {
       price: 44900,
       maxUsers: 10,
       features: [
-        "Director IA Avanzado",
+        "Director IA corporativo (500 consultas/mes)",
+        "Multi-empresa y Multi-moneda",
         "Hasta 10 usuarios incluidos",
-        "Almacenamiento extendido de comprobantes",
-        "Soporte prioritario 24/7",
-        "Todas las funcionalidades"
+        "Auditoría append-only avanzada",
+        "SLA 99.9% y soporte prioritario"
       ]
     }
   ];
@@ -245,7 +245,7 @@ export const SubscriptionView: React.FC = () => {
                     Estado: Suscripción Activa ({currentSub.planId.toUpperCase()})
                   </div>
                   <div style={{ fontSize: "0.8125rem", color: "#15803d" }}>
-                    Tu empresa cuenta con acceso ilimitado al Director IA y cobros inteligentes.
+                    Tu empresa cuenta con {PlanLimitsService.getPlan(currentSub.planId).aiMonthlyQuota} consultas mensuales de Director IA y cobros inteligentes.
                   </div>
                 </div>
               </div>
