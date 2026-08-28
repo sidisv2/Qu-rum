@@ -48,10 +48,12 @@ interface OrgContextType {
   hasPermission: (allowedRoles: Role[]) => boolean;
 
   createCustomer: (customer: Omit<Customer, "id" | "organizationId" | "createdAt">) => Promise<Customer | undefined>;
+  findOrCreateCustomer: (identifierOrName: string, extraData?: Partial<Customer>) => Promise<Customer | null>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
 
   createSupplier: (supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">) => Promise<Supplier | undefined>;
+  findOrCreateSupplier: (identifierOrName: string, extraData?: Partial<Supplier>) => Promise<Supplier | null>;
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
 
@@ -213,6 +215,30 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const hasPermission = (allowedRoles: Role[]): boolean => {
     return allowedRoles.includes(userRole);
+  };
+
+  const findOrCreateCustomer = async (identifierOrName: string, extraData?: Partial<Customer>): Promise<Customer | null> => {
+    if (!currentOrg) return null;
+    const result = await repo.findOrCreateCustomer(currentOrg.id, identifierOrName, extraData);
+    if (result) {
+      setCustomers(prev => {
+        const exists = prev.some(c => c.id === result.id);
+        return exists ? prev : [result, ...prev];
+      });
+    }
+    return result;
+  };
+
+  const findOrCreateSupplier = async (identifierOrName: string, extraData?: Partial<Supplier>): Promise<Supplier | null> => {
+    if (!currentOrg) return null;
+    const result = await repo.findOrCreateSupplier(currentOrg.id, identifierOrName, extraData);
+    if (result) {
+      setSuppliers(prev => {
+        const exists = prev.some(s => s.id === result.id);
+        return exists ? prev : [result, ...prev];
+      });
+    }
+    return result;
   };
 
   const createCustomer = async (cust: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<Customer | undefined> => {
@@ -449,7 +475,9 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createCustomer,
           updateCustomer,
           deleteCustomer,
+          findOrCreateCustomer,
           createSupplier,
+          findOrCreateSupplier,
           updateSupplier,
           deleteSupplier,
           createProduct,
@@ -511,7 +539,9 @@ export const OrgProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createCustomer,
         updateCustomer,
         deleteCustomer,
-        createSupplier,
+          findOrCreateCustomer,
+          createSupplier,
+          findOrCreateSupplier,
         updateSupplier,
         deleteSupplier,
         createProduct,

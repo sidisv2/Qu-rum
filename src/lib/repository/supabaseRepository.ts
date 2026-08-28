@@ -244,6 +244,78 @@ export class SupabaseRepository implements IDataRepository {
     return true;
   }
 
+
+      async findOrCreateCustomer(orgId: string, identifierOrName: string, extraData?: Partial<Customer>): Promise<Customer | null> {
+    this.checkClient();
+    if (!identifierOrName || typeof identifierOrName !== "string" || !identifierOrName.trim()) return null;
+    const clean = identifierOrName.trim();
+
+    // Invocar RPC atómica server-side (garantía de concurrencia y rechazo de UUIDs ajenos)
+    const { data: rpcData, error: rpcErr } = await supabase!.rpc("find_or_create_customer", {
+      p_organization_id: orgId,
+      p_identifier_or_name: clean,
+      p_tax_id: extraData?.taxId || "",
+      p_email: extraData?.email || "",
+      p_phone: extraData?.phone || "",
+      p_address: extraData?.address || ""
+    });
+
+    if (rpcErr) {
+      throw new Error(`Error en RPC find_or_create_customer: ${rpcErr.message || JSON.stringify(rpcErr)}`);
+    }
+
+    if (!rpcData) return null;
+
+    return {
+      id: rpcData.id,
+      organizationId: rpcData.organization_id,
+      name: rpcData.name,
+      email: rpcData.email,
+      phone: rpcData.phone,
+      taxId: rpcData.tax_id,
+      address: rpcData.address,
+      status: rpcData.status,
+      totalSpent: Number(rpcData.total_sales_amount || rpcData.total_spent || 0),
+      totalPendingDebt: Number(rpcData.total_pending_debt || 0),
+      createdAt: rpcData.created_at
+    };
+  }
+
+  async findOrCreateSupplier(orgId: string, identifierOrName: string, extraData?: Partial<Supplier>): Promise<Supplier | null> {
+    this.checkClient();
+    if (!identifierOrName || typeof identifierOrName !== "string" || !identifierOrName.trim()) return null;
+    const clean = identifierOrName.trim();
+    if (clean.toLowerCase() === "varios") return null;
+
+    // Invocar RPC atómica server-side
+    const { data: rpcData, error: rpcErr } = await supabase!.rpc("find_or_create_supplier", {
+      p_organization_id: orgId,
+      p_identifier_or_name: clean,
+      p_email: extraData?.email || "",
+      p_phone: extraData?.phone || "",
+      p_category: extraData?.category || "General"
+    });
+
+    if (rpcErr) {
+      throw new Error(`Error en RPC find_or_create_supplier: ${rpcErr.message || JSON.stringify(rpcErr)}`);
+    }
+
+    if (!rpcData) return null;
+
+    return {
+      id: rpcData.id,
+      organizationId: rpcData.organization_id,
+      name: rpcData.name,
+      contactName: rpcData.contact_name,
+      email: rpcData.email,
+      phone: rpcData.phone,
+      category: rpcData.category,
+      totalPaid: Number(rpcData.total_purchases_amount || rpcData.total_paid || 0),
+      pendingPayment: Number(rpcData.pending_payment || 0),
+      createdAt: rpcData.created_at
+    };
+  }
+
   async getSuppliers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Supplier>> {
     this.checkClient();
     const page = params?.page || 1;

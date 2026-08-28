@@ -74,7 +74,7 @@ export class LocalRepository implements IDataRepository {
     const st = this.getState(orgId);
     const newCust: Customer = {
       ...customer,
-      id: "cust-" + Date.now(),
+      id: crypto.randomUUID(),
       organizationId: orgId,
       name: sanitizeCsvField(customer.name),
       totalSpent: safeRound(customer.totalSpent, 2),
@@ -109,6 +109,106 @@ export class LocalRepository implements IDataRepository {
     return st.customers.length < initialLen;
   }
 
+
+    
+  private _customerCreationLocks = new Map<string, Promise<Customer | null>>();
+  private _supplierCreationLocks = new Map<string, Promise<Supplier | null>>();
+
+  async findOrCreateCustomer(orgId: string, identifierOrName: string, extraData?: Partial<Customer>): Promise<Customer | null> {
+    if (!identifierOrName || typeof identifierOrName !== "string" || !identifierOrName.trim()) return null;
+    const clean = identifierOrName.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
+    
+    const custs = await this.getCustomers(orgId);
+    if (isUuid) {
+      const byId = custs.data.find(c => c.id === clean);
+      if (byId) return byId;
+      // RECHAZO EXPLÍCITO: Si es un UUID válido pero no existe en este tenant, rechazar
+      throw new Error(`UUID de cliente ${clean} no encontrado en la organización ${orgId}`);
+    }
+    
+    const norm = clean.toLowerCase();
+    const byName = custs.data.find(c => c.name.trim().toLowerCase() === norm);
+    if (byName) return byName;
+
+    const lockKey = orgId + ":" + norm;
+    if (this._customerCreationLocks.has(lockKey)) {
+      return this._customerCreationLocks.get(lockKey)!;
+    }
+
+    const creationPromise = (async () => {
+      // Re-comprobar tras lock
+      const currentCusts = await this.getCustomers(orgId);
+      const reCheck = currentCusts.data.find(c => c.name.trim().toLowerCase() === norm);
+      if (reCheck) return reCheck;
+
+      return this.createCustomer(orgId, {
+        name: clean,
+        taxId: extraData?.taxId || "",
+        email: extraData?.email || "",
+        phone: extraData?.phone || "",
+        address: extraData?.address || "",
+        status: "active",
+        totalSpent: 0,
+        totalPendingDebt: 0
+      });
+    })();
+
+    this._customerCreationLocks.set(lockKey, creationPromise);
+    try {
+      return await creationPromise;
+    } finally {
+      this._customerCreationLocks.delete(lockKey);
+    }
+  }
+
+  async findOrCreateSupplier(orgId: string, identifierOrName: string, extraData?: Partial<Supplier>): Promise<Supplier | null> {
+    if (!identifierOrName || typeof identifierOrName !== "string" || !identifierOrName.trim()) return null;
+    const clean = identifierOrName.trim();
+    if (clean.toLowerCase() === "varios") return null;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
+
+    const sups = await this.getSuppliers(orgId);
+    if (isUuid) {
+      const byId = sups.data.find(s => s.id === clean);
+      if (byId) return byId;
+      // RECHAZO EXPLÍCITO: Si es un UUID válido pero no existe en este tenant, rechazar
+      throw new Error(`UUID de proveedor ${clean} no encontrado en la organización ${orgId}`);
+    }
+
+    const norm = clean.toLowerCase();
+    const byName = sups.data.find(s => s.name.trim().toLowerCase() === norm);
+    if (byName) return byName;
+
+    const lockKey = orgId + ":" + norm;
+    if (this._supplierCreationLocks.has(lockKey)) {
+      return this._supplierCreationLocks.get(lockKey)!;
+    }
+
+    const creationPromise = (async () => {
+      const currentSups = await this.getSuppliers(orgId);
+      const reCheck = currentSups.data.find(s => s.name.trim().toLowerCase() === norm);
+      if (reCheck) return reCheck;
+
+      return this.createSupplier(orgId, {
+        name: clean,
+        contactName: clean,
+        email: extraData?.email || "",
+        phone: extraData?.phone || "",
+        category: extraData?.category || "General",
+        totalPaid: 0,
+        pendingPayment: 0
+      });
+    })();
+
+    this._supplierCreationLocks.set(lockKey, creationPromise);
+    try {
+      return await creationPromise;
+    } finally {
+      this._supplierCreationLocks.delete(lockKey);
+    }
+  }
+
   async getSuppliers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Supplier>> {
     let items = this.getState(orgId).suppliers.filter(s => s.organizationId === orgId);
     if (params?.search) {
@@ -131,7 +231,7 @@ export class LocalRepository implements IDataRepository {
     const st = this.getState(orgId);
     const newSup: Supplier = {
       ...supplier,
-      id: "sup-" + Date.now(),
+      id: crypto.randomUUID(),
       organizationId: orgId,
       name: sanitizeCsvField(supplier.name),
       createdAt: new Date().toISOString()
@@ -185,7 +285,7 @@ export class LocalRepository implements IDataRepository {
     const st = this.getState(orgId);
     const newProd: Product = {
       ...product,
-      id: "prod-" + Date.now(),
+      id: crypto.randomUUID(),
       organizationId: orgId,
       name: sanitizeCsvField(product.name),
       cost: safeRound(product.cost, 2),
@@ -246,7 +346,7 @@ export class LocalRepository implements IDataRepository {
 
     const newSale: Sale = {
       ...sale,
-      id: "sale-" + Date.now(),
+      id: crypto.randomUUID(),
       organizationId: orgId,
       subtotal: calculatedSubtotal,
       total: cleanTotal,
@@ -328,7 +428,7 @@ export class LocalRepository implements IDataRepository {
     const st = this.getState(orgId);
     const newExp: Expense = {
       ...expense,
-      id: "exp-" + Date.now(),
+      id: crypto.randomUUID(),
       organizationId: orgId,
       amount: safeRound(expense.amount, 2),
       createdAt: new Date().toISOString()

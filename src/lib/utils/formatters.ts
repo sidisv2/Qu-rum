@@ -87,3 +87,52 @@ export function sanitizeCsvField(val: any): string {
   }
   return str;
 }
+
+export function parseLocalizedAmount(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    if (isNaN(value) || !isFinite(value)) return null;
+    return safeRound(value, 2);
+  }
+  let str = String(value).trim();
+  if (str === "") return null;
+
+  // Remover símbolos de moneda y espacios
+  str = str.replace(/[\$\€\£\¥\s]/g, "");
+
+  // Si contiene puntos y comas
+  if (str.includes(".") && str.includes(",")) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      // Formato latino: 150.000,50 -> 150000.50
+      str = str.replace(/\./g, "").replace(",", ".");
+    } else {
+      // Formato anglosajón: 150,000.50 -> 150000.50
+      str = str.replace(/,/g, "");
+    }
+  } else if (str.includes(",")) {
+    // Si solo tiene coma
+    str = str.replace(",", ".");
+  } else if (str.includes(".")) {
+    // Si tiene un punto y exactamente 3 decimales (miles)
+    const parts = str.split(".");
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/\./g, "");
+    }
+  }
+
+  // Filtrar caracteres no numéricos
+  if (!/^-?\d+(\.\d+)?$/.test(str)) {
+    return null;
+  }
+
+  const num = parseFloat(str);
+  if (isNaN(num) || !isFinite(num)) return null;
+  return safeRound(num, 2);
+}
+
+export function normalizeNullableUuid(value: unknown): string | null {
+  if (!value || typeof value !== "string") return null;
+  const clean = value.trim();
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(clean) ? clean : null;
+}

@@ -39,73 +39,39 @@ export const PLAN_DEFINITIONS: Record<string, PlanDefinition> = {
     aiMonthlyQuota: 500,
     features: [
       "Director IA corporativo (500 consultas/mes)",
-      "Multi-empresa y Multi-moneda",
+      "Multi-empresa y Multi-caja",
       "Hasta 10 usuarios incluidos",
-      "Auditoría append-only avanzada",
-      "SLA 99.9% y soporte dedicado"
+      "Integración API Bancaria",
+      "Asesor Financiero Dedicado"
     ]
   }
 };
 
 export class PlanLimitsService {
-  public static readonly TRIAL_DAYS = 7;
   public static readonly TRIAL_AI_QUOTA = 10;
-  public static readonly TRIAL_MAX_USERS = 1;
-  public static readonly TRIAL_MAX_TRANSACTIONS = 15;
+  public static readonly TRIAL_DAYS = 7;
+  public static readonly TOTAL_FOUNDER_SLOTS = 10;
 
-  public static getPlan(planId: string = "founder"): PlanDefinition {
-    return PLAN_DEFINITIONS[planId] || PLAN_DEFINITIONS.founder;
+  public static getPlan(planId: string): PlanDefinition {
+    return PLAN_DEFINITIONS[planId] || PLAN_DEFINITIONS.starter;
   }
 
-  public static getTrialDaysRemaining(createdAt?: string | null): number {
-    if (!createdAt) return this.TRIAL_DAYS;
-    const created = new Date(createdAt).getTime();
-    const now = Date.now();
-    const diffDays = Math.floor((now - created) / (1000 * 60 * 60 * 24));
-    return Math.max(0, this.TRIAL_DAYS - diffDays);
-  }
-
-  public static canAddMember(
-    currentMembersCount: number,
-    planId: string = "founder",
-    status: string = "trialing"
-  ): {
-    allowed: boolean;
-    maxAllowed: number;
-    reason?: string;
-  } {
-    if (status === "trialing") {
-      const maxAllowed = this.TRIAL_MAX_USERS;
-      if (currentMembersCount >= maxAllowed) {
-        return {
-          allowed: false,
-          maxAllowed,
-          reason: "El período de prueba permite 1 solo usuario. Suscribite al Plan Fundador para sumar hasta 5 colaboradores."
-        };
-      }
-      return { allowed: true, maxAllowed };
+  public static getTrialDaysRemaining(orgCreatedAt?: string | null): number {
+    if (!orgCreatedAt) return this.TRIAL_DAYS;
+    try {
+      const created = new Date(orgCreatedAt);
+      const now = new Date();
+      const diffMs = now.getTime() - created.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      return Math.max(0, this.TRIAL_DAYS - diffDays);
+    } catch {
+      return this.TRIAL_DAYS;
     }
-
-    const plan = this.getPlan(planId);
-    const maxAllowed = plan.maxUsers;
-
-    if (currentMembersCount >= maxAllowed) {
-      return {
-        allowed: false,
-        maxAllowed,
-        reason: `Límite de usuarios alcanzado (${currentMembersCount}/${maxAllowed}) para tu ${plan.name}. Mejorá a un plan superior.`
-      };
-    }
-
-    return {
-      allowed: true,
-      maxAllowed
-    };
   }
 
   public static canQueryAI(
     currentQueriesCount: number,
-    planId: string = "founder",
+    planId: string = "starter",
     status: string = "trialing",
     orgCreatedAt?: string | null
   ): {
@@ -133,7 +99,7 @@ export class PlanLimitsService {
           allowed: false,
           quota,
           remaining: 0,
-          reason: `Alcanzaste el límite de ${quota} consultas de prueba con el Director IA. Elegí tu plan para aumentar tu cuota mensual.`
+          reason: "Alcanzaste el límite de 10 consultas de prueba con el Director IA. Elegí tu plan para aumentar tu cuota mensual o solicitá a un admin restablecer las consultas de evaluación."
         };
       }
 
@@ -153,7 +119,7 @@ export class PlanLimitsService {
         allowed: false,
         quota,
         remaining: 0,
-        reason: `Alcanzaste tu límite mensual de ${quota} consultas con el Director IA en el ${plan.name}. Actualizá tu plan para ampliar tu cuota.`
+        reason: "Has alcanzado el límite mensual de " + quota + " consultas incluido en tu " + plan.name + ". Podés mejorar tu plan o esperar la renovación del ciclo."
       };
     }
 
@@ -161,6 +127,28 @@ export class PlanLimitsService {
       allowed: true,
       quota,
       remaining
+    };
+  }
+
+  public static canAddMember(currentMembersCount: number, planId: string, _subStatus?: string): { allowed: boolean; maxAllowed: number; reason?: string } {
+    return this.canAddUser(currentMembersCount, planId, _subStatus);
+  }
+
+  public static canAddUser(currentUsersCount: number, planId: string, _subStatus?: string): { allowed: boolean; maxAllowed: number; reason?: string } {
+    const plan = this.getPlan(planId);
+    const maxAllowed = plan.maxUsers;
+
+    if (currentUsersCount >= maxAllowed) {
+      return {
+        allowed: false,
+        maxAllowed,
+        reason: "Tu plan actual (" + plan.name + ") permite hasta " + maxAllowed + " usuarios. Para invitar a más miembros, mejorá al Plan Fundador o Pro."
+      };
+    }
+
+    return {
+      allowed: true,
+      maxAllowed
     };
   }
 }

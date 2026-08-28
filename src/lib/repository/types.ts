@@ -50,6 +50,7 @@ export interface IDataRepository {
   getCustomers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Customer>>;
   getCustomerById(orgId: string, id: string): Promise<Customer | null>;
   createCustomer(orgId: string, customer: Omit<Customer, "id" | "organizationId" | "createdAt">): Promise<Customer>;
+  findOrCreateCustomer(orgId: string, identifierOrName: string, extraData?: Partial<Customer>): Promise<Customer | null>;
   updateCustomer(orgId: string, id: string, data: Partial<Customer>): Promise<Customer>;
   deleteCustomer(orgId: string, id: string): Promise<boolean>;
 
@@ -57,6 +58,7 @@ export interface IDataRepository {
   getSuppliers(orgId: string, params?: PaginationParams): Promise<PaginatedResult<Supplier>>;
   getSupplierById(orgId: string, id: string): Promise<Supplier | null>;
   createSupplier(orgId: string, supplier: Omit<Supplier, "id" | "organizationId" | "createdAt">): Promise<Supplier>;
+  findOrCreateSupplier(orgId: string, identifierOrName: string, extraData?: Partial<Supplier>): Promise<Supplier | null>;
   updateSupplier(orgId: string, id: string, data: Partial<Supplier>): Promise<Supplier>;
   deleteSupplier(orgId: string, id: string): Promise<boolean>;
 

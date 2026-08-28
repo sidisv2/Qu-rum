@@ -11,18 +11,20 @@ import {
   ArrowRight,
   Bot,
   AlertCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  AlertTriangle
 } from "lucide-react";
 import Papa from "papaparse";
 import { useOrg } from "../../context/OrgContext";
 import { Button } from "../ui/Button";
-
-const isValidUuid = (id?: string | null): boolean => {
-  if (!id) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-};
+import { parseLocalizedAmount, normalizeNullableUuid } from "../../lib/utils/formatters";
 
 type ImportTarget = "sales" | "expenses" | "mixed" | "customers" | "products" | "suppliers";
+
+interface ImportError {
+  row: number;
+  reason: string;
+}
 
 export const ImportCSVView: React.FC = () => {
   const {
@@ -31,6 +33,8 @@ export const ImportCSVView: React.FC = () => {
     suppliers,
     createCustomer,
     createSupplier,
+    findOrCreateCustomer,
+    findOrCreateSupplier,
     createSale,
     createExpense,
     reloadData,
@@ -43,10 +47,14 @@ export const ImportCSVView: React.FC = () => {
   const [fileName, setFileName] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [importResult, setImportResult] = useState<{
+    imported: number;
+    skipped: number;
+    failed: number;
     salesCount: number;
     expensesCount: number;
     othersCount: number;
     totalAmount: number;
+    errors: ImportError[];
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -74,22 +82,8 @@ export const ImportCSVView: React.FC = () => {
     });
   };
 
-  const parseNumber = (val: any): number => {
-    if (!val) return 0;
-    if (typeof val === "number") return val;
-    let str = String(val).trim();
-    if (str.includes(".") && str.includes(",")) {
-      if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
-        str = str.replace(/\./g, "").replace(",", ".");
-      } else {
-        str = str.replace(/,/g, "");
-      }
-    } else if (str.includes(",")) {
-      str = str.replace(",", ".");
-    }
-    const clean = str.replace(/[^0-9.-]/g, "");
-    const num = parseFloat(clean);
-    return isNaN(num) ? 0 : num;
+  const normalizeEntityName = (name: string): string => {
+    return name.trim().toLowerCase().replace(/\s+/g, " ");
   };
 
   const handleConfirmImport = async () => {
@@ -97,50 +91,68 @@ export const ImportCSVView: React.FC = () => {
     setIsProcessing(true);
     setErrorMessage(null);
 
+    let imported = 0;
+    let skipped = 0;
+    let failed = 0;
     let salesCount = 0;
     let expensesCount = 0;
     let othersCount = 0;
     let totalAmount = 0;
+    const errors: ImportError[] = [];
 
     try {
       if (targetEntity === "sales") {
-        for (const row of parsedData) {
-          try {
-            const amount = parseNumber(row.monto || row.total || row.importe || row.subtotal || row.precio || row.Importe || 0);
-            if (amount <= 0) continue;
+        for (let i = 0; i < parsedData.length; i++) {
+          const row = parsedData[i];
+          const rowNum = i + 2; // Considerando fila de encabezados
 
-            const clientName = row.cliente || row.customer || row.client || row.Cliente_Proveedor || row.contacto || row.nombre || "Cliente General";
+          // Validar monto
+          const rawAmount = row.monto || row.total || row.importe || row.subtotal || row.precio || row.Importe || row.Monto || row.Total;
+          const parsedAmount = parseLocalizedAmount(rawAmount);
+
+          if (parsedAmount === null) {
+            skipped++;
+            errors.push({ row: rowNum, reason: "Monto inválido o no numérico: " + (rawAmount || "vacío") });
+            continue;
+          }
+
+          if (parsedAmount <= 0) {
+            skipped++;
+            errors.push({ row: rowNum, reason: `Monto menor o igual a cero ($${parsedAmount}). Descartado por regla de negocio.` });
+            continue;
+          }
+
+          try {
+                        // Resolver cliente de forma garantizada en repositorio (Supabase/Local)
+            let rawClient = row.cliente || row.customer || row.client || row.Cliente_Proveedor || row.contacto || row.nombre || row.Cliente;
+            let custId: string | undefined = undefined;
+            let clientName = "Cliente General";
+
+            if (rawClient && typeof rawClient === "string" && rawClient.trim() !== "") {
+              clientName = rawClient.trim();
+              try {
+                const resolved = await findOrCreateCustomer(clientName, {
+                  taxId: row.cuit || row.CUIT || "",
+                  email: row.email || row.Email || "",
+                  phone: row.telefono || row.Telefono || ""
+                });
+                if (resolved && normalizeNullableUuid(resolved.id)) {
+                  custId = resolved.id;
+                  clientName = resolved.name;
+                }
+              } catch (custErr: any) {
+                errors.push({ row: rowNum, reason: "Error al resolver cliente " + clientName + ": " + (custErr.message || custErr) });
+              }
+            }
+
             const description = row.concepto || row.descripcion || row.detalle || row.producto || row.Concepto || "Venta importada";
             const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
             const paymentStatus = (String(row.estado || row.status || row.Estado || "").toLowerCase().includes("pend") || String(row.estado || "").toLowerCase().includes("mora"))
               ? "unpaid"
               : "paid";
 
-            // Buscar o crear cliente y capturar UUID real
-            let custId: string | undefined = undefined;
-            let targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
-            if (targetCust && isValidUuid(targetCust.id)) {
-              custId = targetCust.id;
-            } else if (clientName && clientName !== "Cliente General") {
-              try {
-                const created = await createCustomer({
-                  name: clientName,
-                  taxId: row.cuit || row.CUIT || "",
-                  email: row.email || row.Email || "",
-                  phone: row.telefono || row.Telefono || "",
-                  address: "",
-                  status: "active",
-                  totalSpent: 0,
-                  totalPendingDebt: 0
-                });
-                if (created && isValidUuid(created.id)) {
-                  custId = created.id;
-                }
-              } catch {}
-            }
-
             await createSale({
-              customerId: isValidUuid(custId) ? custId : undefined,
+              customerId: custId,
               customerName: clientName,
               saleNumber: "CSV-" + Math.floor(10000 + Math.random() * 90000),
               items: [
@@ -149,113 +161,158 @@ export const ImportCSVView: React.FC = () => {
                   productId: "",
                   description,
                   quantity: 1,
-                  unitPrice: amount,
-                  subtotal: amount
+                  unitPrice: parsedAmount,
+                  subtotal: parsedAmount
                 }
               ],
-              subtotal: amount,
+              subtotal: parsedAmount,
               discount: 0,
               tax: 0,
-              total: amount,
+              total: parsedAmount,
               status: "confirmed",
               paymentStatus,
               date
             });
 
+            imported++;
             salesCount++;
-            totalAmount += amount;
-          } catch (rowErr) {
-            console.warn("Error al procesar fila de venta:", rowErr);
+            totalAmount += parsedAmount;
+          } catch (rowErr: any) {
+            failed++;
+            errors.push({ row: rowNum, reason: `Error al registrar venta: ${rowErr.message || String(rowErr)}` });
           }
         }
       } else if (targetEntity === "expenses") {
-        for (const row of parsedData) {
-          try {
-            const amount = parseNumber(row.monto || row.total || row.importe || row.gasto || row.Importe || 0);
-            if (amount <= 0) continue;
+        for (let i = 0; i < parsedData.length; i++) {
+          const row = parsedData[i];
+          const rowNum = i + 2;
 
-            const supplierName = row.proveedor || row.supplier || row.empresa || row.Cliente_Proveedor || row.contacto || row.nombre || "Varios";
+          const rawAmount = row.monto || row.total || row.importe || row.gasto || row.Importe || row.Monto || row.Gasto;
+          const parsedAmount = parseLocalizedAmount(rawAmount);
+
+          if (parsedAmount === null) {
+            skipped++;
+            errors.push({ row: rowNum, reason: "Monto inválido o no numérico: " + (rawAmount || "vacío") });
+            continue;
+          }
+
+          if (parsedAmount <= 0) {
+            skipped++;
+            errors.push({ row: rowNum, reason: `Importe menor o igual a cero ($${parsedAmount}). Descartado por constraint expenses_amount_check.` });
+            continue;
+          }
+
+          try {
+            let rawSupplier = row.proveedor || row.supplier || row.empresa || row.Cliente_Proveedor || row.contacto || row.nombre || row.Proveedor;
+            const maybeUuid = normalizeNullableUuid(rawSupplier);
+            let supId: string | undefined = undefined;
+            let supplierName = "Varios";
+
+            if (maybeUuid) {
+              const existing = suppliers.find(s => s.id === maybeUuid);
+              if (existing) {
+                supId = existing.id;
+                supplierName = existing.name;
+              }
+            } else if (rawSupplier && typeof rawSupplier === "string" && rawSupplier.trim() !== "" && rawSupplier.trim().toLowerCase() !== "varios") {
+              supplierName = rawSupplier.trim();
+              const norm = normalizeEntityName(supplierName);
+              let existing = suppliers.find(s => normalizeEntityName(s.name) === norm);
+              if (existing) {
+                supId = existing.id;
+              } else {
+                try {
+                  const created = await createSupplier({
+                    name: supplierName,
+                    contactName: supplierName,
+                    email: row.email || row.Email || "",
+                    phone: row.telefono || row.Telefono || "",
+                    category: row.categoria || row.category || row.rubro || row.Categoria || "General",
+                    totalPaid: 0,
+                    pendingPayment: 0
+                  });
+                  if (created && normalizeNullableUuid(created.id)) {
+                    supId = created.id;
+                  }
+                } catch (supErr: any) {
+                  errors.push({ row: rowNum, reason: `No se pudo auto-crear proveedor "${supplierName}": ${supErr.message || supErr}` });
+                }
+              }
+            }
+
             const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Gasto operativo";
             const category = row.categoria || row.category || row.rubro || row.Categoria || "General";
             const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
 
-            // Buscar o crear proveedor y capturar UUID real
-            let supId: string | undefined = undefined;
-            let targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
-            if (targetSup && isValidUuid(targetSup.id)) {
-              supId = targetSup.id;
-            } else if (supplierName && supplierName !== "Varios") {
-              try {
-                const created = await createSupplier({
-                  name: supplierName,
-                  contactName: supplierName,
-                  email: row.email || row.Email || "",
-                  phone: row.telefono || row.Telefono || "",
-                  category,
-                  totalPaid: 0,
-                  pendingPayment: 0
-                });
-                if (created && isValidUuid(created.id)) {
-                  supId = created.id;
-                }
-              } catch {}
-            }
-
             await createExpense({
-              supplierId: isValidUuid(supId) ? supId : undefined,
+              supplierId: supId,
               supplierName,
               category,
-              amount,
+              amount: parsedAmount,
               date,
               description,
               isAnomaly: false
             });
 
+            imported++;
             expensesCount++;
-            totalAmount += amount;
-          } catch (rowErr) {
-            console.warn("Error al procesar fila de gasto:", rowErr);
+            totalAmount += parsedAmount;
+          } catch (rowErr: any) {
+            failed++;
+            errors.push({ row: rowNum, reason: `Error al registrar gasto: ${rowErr.message || String(rowErr)}` });
           }
         }
       } else if (targetEntity === "mixed") {
-        for (const row of parsedData) {
-          try {
-            const amount = parseNumber(row.monto || row.total || row.importe || row.Importe || 0);
-            if (amount <= 0) continue;
+        for (let i = 0; i < parsedData.length; i++) {
+          const row = parsedData[i];
+          const rowNum = i + 2;
 
+          const rawAmount = row.monto || row.total || row.importe || row.Importe || row.Monto;
+          const parsedAmount = parseLocalizedAmount(rawAmount);
+
+          if (parsedAmount === null || parsedAmount <= 0) {
+            skipped++;
+            errors.push({ row: rowNum, reason: "Monto nulo, cero o negativo en movimiento mixto." });
+            continue;
+          }
+
+          try {
             const typeStr = String(row.tipo || row.type || row.Tipo || row.movimiento || "").toLowerCase();
             const date = row.fecha || row.date || row.Fecha || new Date().toISOString().split("T")[0];
             const description = row.concepto || row.descripcion || row.detalle || row.Concepto || "Movimiento importado";
 
-            if (typeStr.includes("gasto") || typeStr.includes("egreso") || typeStr.includes("compra")) {
-              const supplierName = row.contacto || row.proveedor || row.Cliente_Proveedor || row.tercero || "Varios";
+                        if (typeStr.includes("gasto") || typeStr.includes("egreso") || typeStr.includes("compra")) {
+              const supplierName = row.contacto || row.proveedor || row.Cliente_Proveedor || row.tercero || row.Proveedor || "Varios";
               let supId: string | undefined = undefined;
-              const targetSup = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
-              if (targetSup && isValidUuid(targetSup.id)) {
-                supId = targetSup.id;
+              if (supplierName && supplierName.toLowerCase() !== "varios") {
+                const resolvedSup = await findOrCreateSupplier(supplierName);
+                if (resolvedSup && normalizeNullableUuid(resolvedSup.id)) {
+                  supId = resolvedSup.id;
+                }
               }
 
               await createExpense({
-                supplierId: isValidUuid(supId) ? supId : undefined,
+                supplierId: supId,
                 supplierName,
                 category: row.categoria || row.Categoria || "Operativo",
-                amount,
+                amount: parsedAmount,
                 date,
                 description,
                 isAnomaly: false
               });
               expensesCount++;
             } else {
-              // Asumir venta/ingreso
-              const clientName = row.contacto || row.cliente || row.Cliente_Proveedor || row.tercero || "Cliente General";
+              const clientName = row.contacto || row.cliente || row.Cliente_Proveedor || row.tercero || row.Cliente || "Cliente General";
               let custId: string | undefined = undefined;
-              const targetCust = customers.find(c => c.name.toLowerCase() === clientName.toLowerCase());
-              if (targetCust && isValidUuid(targetCust.id)) {
-                custId = targetCust.id;
+              if (clientName) {
+                const resolvedCust = await findOrCreateCustomer(clientName);
+                if (resolvedCust && normalizeNullableUuid(resolvedCust.id)) {
+                  custId = resolvedCust.id;
+                }
               }
 
               await createSale({
-                customerId: isValidUuid(custId) ? custId : undefined,
+                customerId: custId,
                 customerName: clientName,
                 saleNumber: "MIX-" + Math.floor(10000 + Math.random() * 90000),
                 items: [
@@ -264,43 +321,51 @@ export const ImportCSVView: React.FC = () => {
                     productId: "",
                     description,
                     quantity: 1,
-                    unitPrice: amount,
-                    subtotal: amount
+                    unitPrice: parsedAmount,
+                    subtotal: parsedAmount
                   }
                 ],
-                subtotal: amount,
+                subtotal: parsedAmount,
                 discount: 0,
                 tax: 0,
-                total: amount,
+                total: parsedAmount,
                 status: "confirmed",
                 paymentStatus: "paid",
                 date
               });
               salesCount++;
             }
-            totalAmount += amount;
-          } catch (rowErr) {
-            console.warn("Error al procesar fila de movimiento mixto:", rowErr);
+
+            imported++;
+            totalAmount += parsedAmount;
+          } catch (rowErr: any) {
+            failed++;
+            errors.push({ row: rowNum, reason: `Error en fila de movimiento mixto: ${rowErr.message || String(rowErr)}` });
           }
         }
       } else {
         // Entidades maestras
         othersCount = importBulkData(targetEntity, parsedData);
+        imported = othersCount;
       }
 
       await reloadData();
 
       setImportResult({
+        imported,
+        skipped,
+        failed,
         salesCount,
         expensesCount,
         othersCount,
-        totalAmount
+        totalAmount,
+        errors
       });
       setParsedData([]);
       setColumns([]);
       setFileName("");
     } catch (err: any) {
-      setErrorMessage("Ocurrió un error al importar registros: " + (err.message || String(err)));
+      setErrorMessage("Ocurrió un error al procesar la importación: " + (err.message || String(err)));
     } finally {
       setIsProcessing(false);
     }
@@ -470,13 +535,13 @@ export const ImportCSVView: React.FC = () => {
         </div>
       )}
 
-      {/* Resultado de Importación Exitosa */}
+      {/* Resultado de Importación con Auditoría Fila por Fila */}
       {importResult && (
         <div
           className="card"
           style={{
-            backgroundColor: "#f0fdf4",
-            borderColor: "#bbf7d0",
+            backgroundColor: importResult.failed === 0 ? "#f0fdf4" : "#fffbeb",
+            borderColor: importResult.failed === 0 ? "#bbf7d0" : "#fef3c7",
             padding: "1.5rem",
             display: "flex",
             flexDirection: "column",
@@ -484,19 +549,33 @@ export const ImportCSVView: React.FC = () => {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <CheckCircle size={28} style={{ color: "#16a34a" }} />
+            {importResult.failed === 0 ? (
+              <CheckCircle size={28} style={{ color: "#16a34a" }} />
+            ) : (
+              <AlertTriangle size={28} style={{ color: "#d97706" }} />
+            )}
             <div>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#166534", margin: 0 }}>
-                ¡Importación completada con éxito!
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: importResult.failed === 0 ? "#166534" : "#92400e", margin: 0 }}>
+                Resumen de Importación
               </h3>
-              <p style={{ fontSize: "0.8125rem", color: "#15803d", margin: "0.2rem 0 0 0" }}>
-                {importResult.salesCount > 0 && `• ${importResult.salesCount} ventas registradas `}
-                {importResult.expensesCount > 0 && `• ${importResult.expensesCount} gastos registrados `}
-                {importResult.othersCount > 0 && `• ${importResult.othersCount} registros maestros `}
-                {importResult.totalAmount > 0 && `por un total consolidado de $${importResult.totalAmount.toLocaleString("es-AR")}.`}
+              <p style={{ fontSize: "0.8125rem", color: importResult.failed === 0 ? "#15803d" : "#78350f", margin: "0.2rem 0 0 0" }}>
+                Importados con éxito: <strong>{importResult.imported}</strong> | Omitidos: <strong>{importResult.skipped}</strong> | Fallidos: <strong>{importResult.failed}</strong>
+                {importResult.totalAmount > 0 && ` | Total consolidado: $${importResult.totalAmount.toLocaleString("es-AR")}`}
               </p>
             </div>
           </div>
+
+          {/* Listado detallado de filas omitidas o con advertencias */}
+          {importResult.errors.length > 0 && (
+            <div style={{ marginTop: "0.5rem", maxHeight: "160px", overflowY: "auto", fontSize: "0.75rem", backgroundColor: "rgba(0,0,0,0.03)", padding: "0.75rem", borderRadius: "var(--radius-sm, 6px)" }}>
+              <div style={{ fontWeight: 700, marginBottom: "0.25rem", color: "var(--color-text-secondary)" }}>Detalle de registros no importados:</div>
+              {importResult.errors.map((e, idx) => (
+                <div key={idx} style={{ color: "#991b1b", marginBottom: "0.2rem" }}>
+                  • <strong>Fila {e.row}:</strong> {e.reason}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
             <a
